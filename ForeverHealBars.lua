@@ -6,7 +6,7 @@ local PREFIX = "|cff33ff99Forever Heal Bars|r: "
 
 local W, H, GAP = 72, 46, 3          -- button size and spacing
 local MAX_BUTTONS = 40
-local OOR_ALPHA = 0.35                -- alpha for out-of-range players
+local OOR_DIM = 0.65                  -- darkness of the overlay on out-of-range players
 local HOT_SIZE, MAX_HOTS = 11, 3
 local POWER_H = 3                     -- height of the resource bar
 local BAR = "Interface\\Buttons\\WHITE8X8"
@@ -207,9 +207,9 @@ local function Build(btn)
     local dmg = CreateFrame("StatusBar", nil, c)
     dmg:SetAllPoints(hp)
     dmg:SetStatusBarTexture(BAR)
-    dmg:SetStatusBarColor(1, 1, 1, 0.45)
     dmg:SetMinMaxValues(0, 1)
     dmg:SetValue(0)
+    dmg:Hide()
     local stripes = dmg:CreateTexture(nil, "ARTWORK", nil, 1)
     stripes:SetTexture(string.format("Interface\\AddOns\\%s\\media\\stripes", ADDON), "REPEAT", "REPEAT")
     stripes:SetHorizTile(true)
@@ -260,17 +260,30 @@ local function Build(btn)
     end
 
     -- dispellable debuff: the whole frame takes the debuff type's color
+    -- out-of-range dimming: a dark layer on top, so nothing underneath shows
+    -- through the way it would if the whole frame went translucent
+    local dimF = CreateFrame("Frame", nil, c)
+    dimF:SetAllPoints()
+    dimF:SetFrameLevel(text:GetFrameLevel() + 5)
+    local dim = dimF:CreateTexture(nil, "OVERLAY")
+    dim:SetAllPoints()
+    dim:SetColorTexture(0.06, 0.07, 0.1, 1)
+    dim:SetAlpha(0)
+    c.dim = dim
+
     c.dispel = {}
     function c.dispel:Set(r, g, b)
         if r then
             btn.dispelled = true
             c.hp:SetStatusBarColor(r, g, b)
+            c.dmg:SetStatusBarColor(r, g, b)
             c.tint:SetColorTexture(r, g, b, 0.45)
             c.tint:Show()
         else
             btn.dispelled = false
             local col = btn.classColor
             c.hp:SetStatusBarColor(col[1], col[2], col[3])
+            c.dmg:SetStatusBarColor(col[1], col[2], col[3])
             c.tint:Hide()
         end
     end
@@ -322,11 +335,12 @@ local function OnHealthChanged(btn)
     local cur = UnitHealth(u)
     c.dmg:SetMinMaxValues(0, UnitHealthMax(u))
     c.dmg:SetValue(btn.lastHealth or cur)
+    c.dmg:Show()
     btn.lastHealth = cur
     btn.dmgToken = (btn.dmgToken or 0) + 1
     local token = btn.dmgToken
     C_Timer.After(DAMAGE_FLASH, function()
-        if btn.dmgToken == token then c.dmg:SetValue(0) end
+        if btn.dmgToken == token then c.dmg:Hide() end
     end)
     UpdateHealth(btn)
 end
@@ -374,6 +388,7 @@ local function UpdateIdentity(btn)
     if not btn.dispelled then
         local cc = btn.classColor
         c.hp:SetStatusBarColor(cc[1], cc[2], cc[3])
+        c.dmg:SetStatusBarColor(cc[1], cc[2], cc[3])
     end
 end
 
@@ -468,13 +483,14 @@ end
 local function UpdateRange(btn)
     local u = btn.unit
     if not u or not UnitExists(u) then return end
+    local dim = btn.c.dim
     if not UnitIsConnected(u) then
-        btn.c:SetAlpha(OOR_ALPHA)
+        dim:SetAlpha(OOR_DIM)
     elseif u == "player" then
-        btn.c:SetAlpha(1)
+        dim:SetAlpha(0)
     else
         local inRange = UnitInRange(u)
-        btn.c:SetAlpha(FromBool(inRange, 1, OOR_ALPHA))
+        dim:SetAlpha(FromBool(inRange, 0, OOR_DIM))
     end
 end
 
@@ -593,7 +609,7 @@ local function InitButton(self, name)
         if key == "unit" then
             b.lastHealth = nil
             b.dmgToken = (b.dmgToken or 0) + 1
-            b.c.dmg:SetValue(0)
+            b.c.dmg:Hide()
             b.unit = value
             Remap()
             if value then UpdateAll(b) end

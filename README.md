@@ -10,11 +10,11 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Dispellable debuffs.** The whole frame turns the debuff type's color (blue magic, purple curse, brown disease, green poison) when someone has a debuff you can remove.
 - **Incoming heals.** A light green extension on the health bar for heals about to land.
 - **Resources (optional).** Tick **Show mana / rage / energy bar** in settings for a thin bar along the bottom of each frame: mana (blue), rage (red) or energy (yellow). Off by default.
-- **Range and aggro.** Out-of-range players fade, and players with aggro get a red outline (faint for high threat).
+- **Range and aggro.** Out-of-range players are dimmed, and players with aggro get a red outline (faint for high threat).
 - **Lock button.** A small padlock above the top-left corner unlocks the frames. While unlocked, drag anywhere on them to move them, and drag the bottom-right corner to resize: right for wider frames, down for taller ones. Click the padlock again to lock.
 - **Settings button.** A small gear next to the padlock opens the settings window (same as `/fhb`).
 
-Each frame shows the player's name over a health bar in their class color. When someone takes damage, the chunk they just lost flashes as a light striped segment for a second (or until their health changes again).
+Each frame shows the player's name over a health bar in their class color. When someone takes damage, the chunk they just lost flashes as a striped segment in the same color for a second (or until their health changes again).
 
 Blizzard's own party and raid frames are hidden by default (the raid tools tab on the left edge stays). Untick **Hide Blizzard party and raid frames** in `/fhb`, or type `/fhb blizzard`, then `/reload` to bring them back.
 
