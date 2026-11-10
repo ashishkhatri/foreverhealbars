@@ -59,8 +59,40 @@ local DEBUFF_COLOR = DebuffTypeColor or {
     Disease = { r = .6, g = .4, b = 0 }, Poison = { r = 0, g = .6, b = 0 },
 }
 
+-- Default click-casting per class. Keys: modifier prefix + mouse button
+-- (1 left, 2 right, 3 middle). Plain left/right stay target/menu. Spells a
+-- character hasn't learned yet simply do nothing (they show red in /fhb).
+local CLASS_DEFAULTS = {
+    PRIEST = {
+        ["shift-1"] = "Flash Heal", ["ctrl-1"] = "Greater Heal", ["alt-1"] = "Renew",
+        ["shift-2"] = "Power Word: Shield", ["3"] = "Dispel Magic", ["shift-3"] = "Cure Disease",
+    },
+    DRUID = {
+        ["shift-1"] = "Healing Touch", ["ctrl-1"] = "Regrowth", ["alt-1"] = "Rejuvenation",
+        ["3"] = "Remove Curse", ["shift-3"] = "Cure Poison",
+    },
+    PALADIN = {
+        ["shift-1"] = "Flash of Light", ["ctrl-1"] = "Holy Light",
+        ["shift-2"] = "Blessing of Protection", ["3"] = "Cleanse",
+    },
+    SHAMAN = {
+        ["shift-1"] = "Lesser Healing Wave", ["ctrl-1"] = "Healing Wave", ["alt-1"] = "Chain Heal",
+        ["3"] = "Cure Poison", ["shift-3"] = "Cure Disease",
+    },
+    MAGE = { ["3"] = "Remove Lesser Curse" },
+}
+
+local function ClassDefaults()
+    local _, class = UnitClass("player")
+    local t = {}
+    for k, v in pairs(CLASS_DEFAULTS[class] or {}) do t[k] = v end
+    return t
+end
+
 local function Binds()
-    DB.binds[charKey] = DB.binds[charKey] or {}
+    if not DB.binds[charKey] then
+        DB.binds[charKey] = ClassDefaults()
+    end
     return DB.binds[charKey]
 end
 
@@ -92,10 +124,17 @@ local function Build(btn)
     local c = CreateFrame("Frame", nil, btn)
     c:SetAllPoints()
     btn.c = c
+    btn.classColor = { 0.3, 0.8, 0.3 }
 
     local bg = c:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(0.12, 0.13, 0.17, 0.9)
+
+    -- tints the empty part of the frame while a dispellable debuff is up
+    local tint = c:CreateTexture(nil, "BACKGROUND", nil, 1)
+    tint:SetAllPoints()
+    tint:Hide()
+    c.tint = tint
 
     local hp = CreateFrame("StatusBar", nil, c)
     hp:SetAllPoints()
@@ -143,7 +182,21 @@ local function Build(btn)
         c.hots[i] = t
     end
 
-    c.dispel = Border(text, 0, 3)     -- inside edge: dispellable debuff, by type
+    -- dispellable debuff: the whole frame takes the debuff type's color
+    c.dispel = {}
+    function c.dispel:Set(r, g, b)
+        if r then
+            btn.dispelled = true
+            c.hp:SetStatusBarColor(r, g, b)
+            c.tint:SetColorTexture(r, g, b, 0.45)
+            c.tint:Show()
+        else
+            btn.dispelled = false
+            local col = btn.classColor
+            c.hp:SetStatusBarColor(col[1], col[2], col[3])
+            c.tint:Hide()
+        end
+    end
     c.aggro = Border(text, 2, 2)      -- outside edge: threat
     c.aggro:Set(0.9, 0.15, 0.15)
     c.aggro:SetAlpha(0)
@@ -203,9 +256,13 @@ local function UpdateIdentity(btn)
         return class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
     end)
     if ok and col then
-        c.hp:SetStatusBarColor(col.r * 0.8, col.g * 0.8, col.b * 0.8)
+        btn.classColor = { col.r * 0.8, col.g * 0.8, col.b * 0.8 }
     else
-        c.hp:SetStatusBarColor(0.3, 0.8, 0.3)
+        btn.classColor = { 0.3, 0.8, 0.3 }
+    end
+    if not btn.dispelled then
+        local cc = btn.classColor
+        c.hp:SetStatusBarColor(cc[1], cc[2], cc[3])
     end
 end
 
@@ -453,6 +510,11 @@ end
 ---------------------------------------------------------------------------
 -- Moving the frames
 ---------------------------------------------------------------------------
+local lockBtn
+local function LockIcon(locked)
+    return string.format("Interface\\AddOns\\%s\\media\\%s", ADDON, locked and "locked" or "unlocked")
+end
+
 local function SetLocked(locked)
     if InCombatLockdown() then
         pending[#pending + 1] = function() SetLocked(locked) end
@@ -470,7 +532,7 @@ local function SetLocked(locked)
         t:SetColorTexture(0.2, 1, 0.6, 0.25)
         local fs = mover:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         fs:SetPoint("CENTER")
-        fs:SetText("Drag to move\n|cffaaaaaa/fhb lock when done|r")
+        fs:SetText("Drag to move\n|cffaaaaaaclick the lock when done|r")
         mover:EnableMouse(true)
         mover:RegisterForDrag("LeftButton")
         mover:SetScript("OnDragStart", function()
@@ -482,6 +544,36 @@ local function SetLocked(locked)
         end)
     end
     mover:SetShown(not locked)
+    if lockBtn then
+        lockBtn.icon:SetTexture(LockIcon(locked))
+        lockBtn.icon:SetVertexColor(locked and 0.75 or 0.3, locked and 0.75 or 1, locked and 0.75 or 0.6)
+    end
+end
+
+-- Small padlock just above the top-left corner of the frames.
+local function CreateLockButton()
+    lockBtn = CreateFrame("Button", nil, UIParent)
+    lockBtn:SetSize(14, 14)
+    lockBtn:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 3)
+    lockBtn:SetFrameStrata("DIALOG")
+    lockBtn:SetFrameLevel(20)
+    lockBtn.icon = lockBtn:CreateTexture(nil, "ARTWORK")
+    lockBtn.icon:SetAllPoints()
+    lockBtn:SetScript("OnClick", function() SetLocked(not DB.locked) end)
+    lockBtn:SetScript("OnEnter", function(self)
+        self:SetAlpha(1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+        GameTooltip:SetText(DB.locked and "Frames locked" or "Frames unlocked", 1, 1, 1)
+        GameTooltip:AddLine(DB.locked and "Click to unlock and drag them." or "Click to lock them in place.", nil, nil, nil, true)
+        GameTooltip:Show()
+    end)
+    lockBtn:SetScript("OnLeave", function(self)
+        self:SetAlpha(0.6)
+        GameTooltip:Hide()
+    end)
+    lockBtn:SetAlpha(0.6)
+    lockBtn.icon:SetTexture(LockIcon(DB.locked))
+    lockBtn.icon:SetVertexColor(0.75, 0.75, 0.75)
 end
 
 ---------------------------------------------------------------------------
@@ -492,7 +584,7 @@ local config
 local function CreateConfig()
     local f = CreateFrame("Frame", "ForeverHealBarsConfig", UIParent, "BasicFrameTemplateWithInset")
     local colW, rowH = 150, 30
-    f:SetSize(90 + colW * #CLICKS + 20, 110 + rowH * #MODS)
+    f:SetSize(90 + colW * #CLICKS + 20, 124 + rowH * #MODS)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
@@ -570,7 +662,17 @@ local function CreateConfig()
 
     local note = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     note:SetPoint("BOTTOMLEFT", 16, 14)
-    note:SetText("Red text: spell not found in your spellbook. Bindings are saved per character.")
+    note:SetText("Red: not in your spellbook yet. Saved per character.")
+
+    local reset = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    reset:SetSize(150, 22)
+    reset:SetPoint("BOTTOMRIGHT", -14, 10)
+    reset:SetText("Reset to class defaults")
+    reset:SetScript("OnClick", function()
+        DB.binds[charKey] = ClassDefaults()
+        for _, e in ipairs(f.boxes) do e:Refresh() end
+        if not ApplyBindingsAll() then Msg("bindings will update after combat.") end
+    end)
 
     f:SetScript("OnShow", function(self) for _, e in ipairs(self.boxes) do e:Refresh() end end)
     f:Hide()
@@ -611,12 +713,20 @@ ev:SetScript("OnEvent", function(_, event, arg1)
         ForeverHealBarsDB = ForeverHealBarsDB or {}
         DB = ForeverHealBarsDB
         DB.binds = DB.binds or {}
+        DB.defaulted = DB.defaulted or {}
         if DB.locked == nil then DB.locked = true end
     elseif event == "PLAYER_LOGIN" then
         charKey = UnitName("player") .. "-" .. GetRealmName()
+        if not DB.defaulted[charKey] then
+            DB.defaulted[charKey] = true
+            if not DB.binds[charKey] or not next(DB.binds[charKey]) then
+                DB.binds[charKey] = ClassDefaults()
+            end
+        end
         OutOfCombat(function()
             CreateHeader()
-            if not DB.locked then SetLocked(false) end
+            CreateLockButton()
+            SetLocked(DB.locked)
         end)
         for e in pairs(UNIT_EVENTS) do pcall(ev.RegisterEvent, ev, e) end
         ev:RegisterEvent("GROUP_ROSTER_UPDATE")
