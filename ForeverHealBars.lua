@@ -8,6 +8,7 @@ local W, H, GAP = 72, 46, 3          -- button size and spacing
 local MAX_BUTTONS = 40
 local OOR_ALPHA = 0.35                -- alpha for out-of-range players
 local HOT_SIZE, MAX_HOTS = 11, 3
+local POWER_H = 3                     -- height of the resource bar
 local BAR = "Interface\\Buttons\\WHITE8X8"
 
 local DB, charKey
@@ -180,8 +181,21 @@ local function Build(btn)
     tint:Hide()
     c.tint = tint
 
+    -- resource bar: a thin strip along the bottom
+    local pw = CreateFrame("StatusBar", nil, c)
+    pw:SetPoint("BOTTOMLEFT")
+    pw:SetPoint("BOTTOMRIGHT")
+    pw:SetHeight(POWER_H)
+    pw:SetStatusBarTexture(BAR)
+    pw:SetMinMaxValues(0, 1)
+    local pwbg = pw:CreateTexture(nil, "BACKGROUND")
+    pwbg:SetAllPoints()
+    pwbg:SetColorTexture(0, 0, 0, 0.6)
+    c.power = pw
+
     local hp = CreateFrame("StatusBar", nil, c)
-    hp:SetAllPoints()
+    hp:SetPoint("TOPLEFT")
+    hp:SetPoint("BOTTOMRIGHT", 0, POWER_H)
     hp:SetStatusBarTexture(BAR)
     hp:SetMinMaxValues(0, 1)
     c.hp = hp
@@ -289,6 +303,27 @@ local function UpdateHealth(btn)
             c.status:SetAlpha(UnitHealthPercent(u, false, hideAtFull))
         end
     end
+end
+
+-- Mana, rage, energy (and friends). The type is readable; the amounts can be
+-- secret, so they go straight to the bar.
+local POWER_COLOR = {
+    MANA = { 0.25, 0.5, 1 }, RAGE = { 0.9, 0.15, 0.15 }, ENERGY = { 1, 0.85, 0.2 },
+    FOCUS = { 1, 0.5, 0.25 }, RUNIC_POWER = { 0, 0.82, 1 },
+}
+local function UpdatePower(btn)
+    local u, c = btn.unit, btn.c
+    if not u or not UnitExists(u) then return end
+    local _, token = UnitPowerType(u)
+    local col = token and POWER_COLOR[token]
+    if not col and token and PowerBarColor and PowerBarColor[token] then
+        local pc = PowerBarColor[token]
+        col = { pc.r, pc.g, pc.b }
+    end
+    col = col or POWER_COLOR.MANA
+    c.power:SetStatusBarColor(col[1], col[2], col[3])
+    c.power:SetMinMaxValues(0, UnitPowerMax(u))
+    c.power:SetValue(UnitPower(u))
 end
 
 local function UpdateIdentity(btn)
@@ -414,6 +449,7 @@ end
 local function UpdateAll(btn)
     UpdateIdentity(btn)
     UpdateHealth(btn)
+    UpdatePower(btn)
     UpdateAuras(btn)
     UpdateThreat(btn)
     UpdateRange(btn)
@@ -880,6 +916,10 @@ local UNIT_EVENTS = {
     UNIT_CONNECTION = UpdateAll,
     UNIT_FLAGS = UpdateHealth,
     UNIT_AURA = UpdateAuras,
+    UNIT_POWER_UPDATE = UpdatePower,
+    UNIT_POWER_FREQUENT = UpdatePower,
+    UNIT_MAXPOWER = UpdatePower,
+    UNIT_DISPLAYPOWER = UpdatePower,
     UNIT_THREAT_SITUATION_UPDATE = UpdateThreat,
     UNIT_NAME_UPDATE = UpdateIdentity,
 }

@@ -7,6 +7,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Your HoTs.** Small icons in the top-right corner of each frame.
 - **Dispellable debuffs.** The whole frame turns the debuff type's color (blue magic, purple curse, brown disease, green poison) when someone has a debuff you can remove.
 - **Incoming heals.** A light green extension on the health bar for heals about to land.
+- **Resources.** A thin bar along the bottom of each frame shows mana (blue), rage (red) or energy (yellow).
 - **Range and aggro.** Out-of-range players fade, and players with aggro get a red outline (faint for high threat).
 - **Lock button.** A small padlock above the top-left corner unlocks the frames. While unlocked, drag anywhere on them to move them, and drag the bottom-right corner to resize: right for wider frames, down for taller ones. Click the padlock again to lock.
 
