@@ -590,6 +590,49 @@ local function ApplyScale(sc)
     return sc
 end
 
+-- Frame (cell) size: width and height independently.
+local MIN_W, MAX_W, MIN_H, MAX_H = 40, 200, 22, 120
+
+local function ConfigSnippet(w, h)
+    return string.format([[
+        self:SetWidth(%d)
+        self:SetHeight(%d)
+        self:GetParent():CallMethod("initButton", self:GetName())
+    ]], w, h)
+end
+
+local layoutTick = 0
+local function ApplySize(w, h)
+    w = math.max(MIN_W, math.min(MAX_W, math.floor(w + 0.5)))
+    h = math.max(MIN_H, math.min(MAX_H, math.floor(h + 0.5)))
+    DB.w, DB.h = w, h
+    for _, b in ipairs(buttons) do
+        b:SetSize(w, h)
+        b.c.name:SetWidth(w - 6)
+        b.c.inc:SetWidth(w)
+        -- short frames: name only, centred; tall enough: name above missing health
+        local roomy = h >= 34
+        b.c.name:ClearAllPoints()
+        b.c.name:SetPoint("CENTER", 0, roomy and 6 or 0)
+        b.c.status:SetShown(roomy)
+    end
+    anchor:SetSize(w, h)
+    header:SetAttribute("initialConfigFunction", ConfigSnippet(w, h))
+    -- any attribute change makes the header lay its buttons out again
+    layoutTick = layoutTick + 1
+    header:SetAttribute("fhbLayout", layoutTick)
+    C_Timer.After(0, UpdateMover)
+    return w, h
+end
+
+-- How many columns and rows of frames are showing right now.
+local function GridShape()
+    local n = 0
+    for _, b in ipairs(buttons) do if b:IsShown() then n = n + 1 end end
+    n = math.max(n, 1)
+    return math.ceil(n / 5), math.min(n, 5)
+end
+
 local function CreateMover()
     mover = CreateFrame("Frame", nil, UIParent)
     mover:SetFrameStrata("DIALOG")
@@ -636,22 +679,22 @@ local function CreateMover()
     grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
     grip:SetScript("OnMouseDown", function(self)
         if InCombatLockdown() then return end
-        local x, y = GetCursorPosition()
         local ui = UIParent:GetEffectiveScale()
+        local x, y = GetCursorPosition()
         self.startX, self.startY = x / ui, y / ui
-        self.startScale = header:GetScale()
-        self.baseW = math.max(header:GetWidth() or 0, W)
-        self.baseH = math.max(header:GetHeight() or 0, H)
+        self.startW, self.startH = DB.w or W, DB.h or H
+        self.cols, self.rows = GridShape()
         self:SetScript("OnUpdate", function(g)
             if InCombatLockdown() then g:SetScript("OnUpdate", nil) return end
             local cx, cy = GetCursorPosition()
-            cx, cy = cx / ui, cy / ui
-            -- follow whichever way the corner was pulled further
-            local byW = (g.baseW * g.startScale + (cx - g.startX)) / g.baseW
-            local byH = (g.baseH * g.startScale + (g.startY - cy)) / g.baseH
-            local target = math.abs(byW - g.startScale) > math.abs(byH - g.startScale) and byW or byH
-            local sc = ApplyScale(target)
-            SetHint(string.format("Scale  |cff33ff99%d%%|r", sc * 100 + 0.5))
+            local sc = header:GetScale()
+            -- spread the cursor movement across the columns / rows
+            local w = g.startW + (cx / ui - g.startX) / sc / g.cols
+            local h = g.startH + (g.startY - cy / ui) / sc / g.rows
+            if math.floor(w + 0.5) ~= DB.w or math.floor(h + 0.5) ~= DB.h then
+                w, h = ApplySize(w, h)
+            end
+            SetHint(string.format("Size  |cff33ff99%d × %d|r", DB.w, DB.h))
         end)
     end)
     grip:SetScript("OnMouseUp", function(self)
@@ -661,7 +704,8 @@ local function CreateMover()
     grip:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Drag to resize", 1, 1, 1)
-        GameTooltip:AddLine(string.format("Currently %d%%", header:GetScale() * 100 + 0.5), nil, nil, nil, true)
+        GameTooltip:AddLine(string.format("Each frame is %d × %d. Drag right for wider, down for taller.",
+            DB.w or W, DB.h or H), nil, nil, nil, true)
         GameTooltip:Show()
     end)
     grip:SetScript("OnLeave", GameTooltip_Hide)
@@ -866,6 +910,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
         end
         OutOfCombat(function()
             CreateHeader()
+            ApplySize(DB.w or W, DB.h or H)
             CreateLockButton()
             SetLocked(DB.locked)
         end)
@@ -917,8 +962,8 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         DB.scale = s
         if not OutOfCombat(function() ApplyScale(s) end) then Msg("will rescale after combat.") end
     elseif cmd == "reset" then
-        DB.pos, DB.scale = nil, 1
-        if not OutOfCombat(function() PlaceAnchor(); ApplyScale(1) end) then
+        DB.pos, DB.scale, DB.w, DB.h = nil, 1, nil, nil
+        if not OutOfCombat(function() PlaceAnchor(); ApplyScale(1); ApplySize(W, H) end) then
             Msg("will reset after combat.")
         end
     else
