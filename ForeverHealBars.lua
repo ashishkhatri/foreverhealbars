@@ -559,6 +559,116 @@ local function LockIcon(locked)
     return string.format("Interface\\AddOns\\%s\\media\\%s", ADDON, locked and "locked" or "unlocked")
 end
 
+local ACCENT = { 0.2, 1, 0.6 }
+local MIN_SCALE, MAX_SCALE = 0.5, 2
+
+-- Size of the whole grid on screen, never smaller than one frame.
+local function GridSize()
+    local sc = header:GetScale()
+    return math.max(header:GetWidth() or 0, W) * sc, math.max(header:GetHeight() or 0, H) * sc
+end
+
+local function UpdateMover()
+    if not mover or not mover:IsShown() then return end
+    local w, h = GridSize()
+    mover:SetSize(w + 8, h + 8)
+end
+
+local function SetHint(text)
+    if not mover then return end
+    mover.hint:SetText(text)
+    mover.pill:SetWidth(mover.hint:GetStringWidth() + 16)
+end
+local DEFAULT_HINT = "Drag to move  |cff666a75·|r  drag the corner to resize"
+
+local function ApplyScale(sc)
+    sc = math.floor(sc * 20 + 0.5) / 20        -- 5% steps
+    sc = math.max(MIN_SCALE, math.min(MAX_SCALE, sc))
+    DB.scale = sc
+    header:SetScale(sc)
+    UpdateMover()
+    return sc
+end
+
+local function CreateMover()
+    mover = CreateFrame("Frame", nil, UIParent)
+    mover:SetFrameStrata("DIALOG")
+    mover:SetPoint("TOPLEFT", anchor, "TOPLEFT", -4, 4)
+    mover:EnableMouse(true)
+    mover:RegisterForDrag("LeftButton")
+
+    -- dim fill and a 1px accent outline hugging the grid
+    local fill = mover:CreateTexture(nil, "BACKGROUND")
+    fill:SetAllPoints()
+    fill:SetColorTexture(0.04, 0.05, 0.08, 0.55)
+    local edge = Border(mover, 0, 1, "BORDER")
+    edge:Set(ACCENT[1], ACCENT[2], ACCENT[3])
+    edge:SetAlpha(0.9)
+
+    -- hint pill to the right of the padlock
+    local pill = CreateFrame("Frame", nil, mover)
+    pill:SetHeight(16)
+    pill:SetPoint("BOTTOMLEFT", mover, "TOPLEFT", 22, 3)
+    local pbg = pill:CreateTexture(nil, "BACKGROUND")
+    pbg:SetAllPoints()
+    pbg:SetColorTexture(0.04, 0.05, 0.08, 0.85)
+    local pedge = Border(pill, 0, 1, "BORDER")
+    pedge:Set(ACCENT[1], ACCENT[2], ACCENT[3])
+    pedge:SetAlpha(0.5)
+    local hint = pill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hint:SetPoint("CENTER")
+    mover.pill, mover.hint = pill, hint
+
+    mover:SetScript("OnDragStart", function()
+        if not InCombatLockdown() then anchor:StartMoving() end
+    end)
+    mover:SetScript("OnDragStop", function()
+        anchor:StopMovingOrSizing()
+        SavePosition()
+    end)
+
+    -- resize grip in the bottom-right corner: drag to scale the whole grid
+    local grip = CreateFrame("Button", nil, mover)
+    grip:SetSize(16, 16)
+    grip:SetPoint("BOTTOMRIGHT", -1, 1)
+    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    grip:SetScript("OnMouseDown", function(self)
+        if InCombatLockdown() then return end
+        local x, y = GetCursorPosition()
+        local ui = UIParent:GetEffectiveScale()
+        self.startX, self.startY = x / ui, y / ui
+        self.startScale = header:GetScale()
+        self.baseW = math.max(header:GetWidth() or 0, W)
+        self.baseH = math.max(header:GetHeight() or 0, H)
+        self:SetScript("OnUpdate", function(g)
+            if InCombatLockdown() then g:SetScript("OnUpdate", nil) return end
+            local cx, cy = GetCursorPosition()
+            cx, cy = cx / ui, cy / ui
+            -- follow whichever way the corner was pulled further
+            local byW = (g.baseW * g.startScale + (cx - g.startX)) / g.baseW
+            local byH = (g.baseH * g.startScale + (g.startY - cy)) / g.baseH
+            local target = math.abs(byW - g.startScale) > math.abs(byH - g.startScale) and byW or byH
+            local sc = ApplyScale(target)
+            SetHint(string.format("Scale  |cff33ff99%d%%|r", sc * 100 + 0.5))
+        end)
+    end)
+    grip:SetScript("OnMouseUp", function(self)
+        self:SetScript("OnUpdate", nil)
+        SetHint(DEFAULT_HINT)
+    end)
+    grip:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Drag to resize", 1, 1, 1)
+        GameTooltip:AddLine(string.format("Currently %d%%", header:GetScale() * 100 + 0.5), nil, nil, nil, true)
+        GameTooltip:Show()
+    end)
+    grip:SetScript("OnLeave", GameTooltip_Hide)
+
+    SetHint(DEFAULT_HINT)
+end
+
 local function SetLocked(locked)
     if InCombatLockdown() then
         pending[#pending + 1] = function() SetLocked(locked) end
@@ -566,31 +676,12 @@ local function SetLocked(locked)
         return
     end
     DB.locked = locked
-    if not mover then
-        mover = CreateFrame("Frame", nil, UIParent)
-        mover:SetFrameStrata("DIALOG")
-        mover:SetPoint("TOPLEFT", anchor, "TOPLEFT", -4, 4)
-        mover:SetSize(W * 3, H + 8)
-        local t = mover:CreateTexture(nil, "BACKGROUND")
-        t:SetAllPoints()
-        t:SetColorTexture(0.2, 1, 0.6, 0.25)
-        local fs = mover:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        fs:SetPoint("CENTER")
-        fs:SetText("Drag to move\n|cffaaaaaaclick the lock when done|r")
-        mover:EnableMouse(true)
-        mover:RegisterForDrag("LeftButton")
-        mover:SetScript("OnDragStart", function()
-            if not InCombatLockdown() then anchor:StartMoving() end
-        end)
-        mover:SetScript("OnDragStop", function()
-            anchor:StopMovingOrSizing()
-            SavePosition()
-        end)
-    end
+    if not mover then CreateMover() end
     mover:SetShown(not locked)
+    UpdateMover()
     if lockBtn then
         lockBtn.icon:SetTexture(LockIcon(locked))
-        lockBtn.icon:SetVertexColor(locked and 0.75 or 0.3, locked and 0.75 or 1, locked and 0.75 or 0.6)
+        lockBtn.icon:SetVertexColor(locked and 0.75 or ACCENT[1], locked and 0.75 or ACCENT[2], locked and 0.75 or ACCENT[3])
     end
 end
 
@@ -788,6 +879,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
         for _, f in ipairs(list) do f() end
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
         Remap()
+        C_Timer.After(0.1, UpdateMover)
         for _, b in ipairs(buttons) do if b:IsShown() then UpdateAll(b) end end
     end
 end)
@@ -823,10 +915,10 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         local s = tonumber(arg)
         if not s or s < 0.5 or s > 2 then Msg("scale must be between 0.5 and 2.") return end
         DB.scale = s
-        if not OutOfCombat(function() header:SetScale(s) end) then Msg("will rescale after combat.") end
+        if not OutOfCombat(function() ApplyScale(s) end) then Msg("will rescale after combat.") end
     elseif cmd == "reset" then
         DB.pos, DB.scale = nil, 1
-        if not OutOfCombat(function() PlaceAnchor(); header:SetScale(1) end) then
+        if not OutOfCombat(function() PlaceAnchor(); ApplyScale(1) end) then
             Msg("will reset after combat.")
         end
     else

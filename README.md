@@ -8,7 +8,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Dispellable debuffs.** The whole frame turns the debuff type's color (blue magic, purple curse, brown disease, green poison) when someone has a debuff you can remove.
 - **Incoming heals.** A light green extension on the health bar for heals about to land.
 - **Range and aggro.** Out-of-range players fade, and players with aggro get a red outline (faint for high threat).
-- **Lock button.** A small padlock above the top-left corner unlocks the frames so you can drag them, and locks them again.
+- **Lock button.** A small padlock above the top-left corner unlocks the frames. While unlocked, drag anywhere on them to move them and drag the bottom-right corner to resize; click the padlock again to lock.
 
 Each frame shows the player's name in their class color and how much health they're missing.
 
@@ -52,7 +52,7 @@ Use `/fhb` or `/healbars`.
 | `/fhb` | Open the click-casting window |
 | `/fhb unlock` | Unlock the frames to drag them (same as the padlock) |
 | `/fhb lock` | Lock them again |
-| `/fhb scale 1.2` | Resize the frames (0.5 to 2) |
+| `/fhb scale 1.2` | Resize the frames (0.5 to 2), same as dragging the corner |
 | `/fhb reset` | Put the frames back in the default spot and size |
 
 ## Releasing
