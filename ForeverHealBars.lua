@@ -792,6 +792,47 @@ local function CreateLockButton()
 end
 
 ---------------------------------------------------------------------------
+-- Hiding Blizzard's party and raid frames
+---------------------------------------------------------------------------
+-- The frames are moved under a hidden parent and stop listening for events.
+-- The raid tools tab on the left edge of the screen is left alone. Bringing
+-- them back needs a /reload, since the game rebuilds them on load.
+local hider = CreateFrame("Frame")
+hider:Hide()
+local blizzHidden = false
+
+local function BlizzardFrames()
+    local list = { CompactRaidFrameContainer, CompactPartyFrame, PartyFrame, PartyMemberBackground }
+    for i = 1, 4 do list[#list + 1] = _G["PartyMemberFrame" .. i] end
+    return list
+end
+
+local function HideBlizzard()
+    if blizzHidden or not DB.hideBlizzard then return end
+    OutOfCombat(function()
+        if blizzHidden then return end
+        blizzHidden = true
+        for _, f in ipairs(BlizzardFrames()) do
+            if f then
+                pcall(f.UnregisterAllEvents, f)
+                pcall(f.Hide, f)
+                pcall(f.SetParent, f, hider)
+            end
+        end
+    end)
+end
+
+local function SetHideBlizzard(on)
+    DB.hideBlizzard = on
+    if on then
+        HideBlizzard()
+        Msg("Blizzard party and raid frames hidden.")
+    elseif blizzHidden then
+        Msg("Blizzard party and raid frames will come back after a /reload.")
+    end
+end
+
+---------------------------------------------------------------------------
 -- Click-casting setup window
 ---------------------------------------------------------------------------
 local config
@@ -799,7 +840,7 @@ local config
 local function CreateConfig()
     local f = CreateFrame("Frame", "ForeverHealBarsConfig", UIParent, "BasicFrameTemplateWithInset")
     local colW, rowH = 150, 30
-    f:SetSize(90 + colW * #CLICKS + 20, 124 + rowH * #MODS)
+    f:SetSize(90 + colW * #CLICKS + 20, 152 + rowH * #MODS)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
@@ -875,6 +916,17 @@ local function CreateConfig()
         end
     end
 
+    local hide = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+    hide:SetSize(22, 22)
+    hide:SetPoint("BOTTOMLEFT", 12, 36)
+    local hideLabel = hide.Text or hide.text or hide:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hideLabel:ClearAllPoints()
+    hideLabel:SetPoint("LEFT", hide, "RIGHT", 2, 0)
+    hideLabel:SetFontObject("GameFontHighlightSmall")
+    hideLabel:SetText("Hide Blizzard party and raid frames")
+    hide:SetScript("OnClick", function(self) SetHideBlizzard(self:GetChecked() and true or false) end)
+    f.hideBlizz = hide
+
     local note = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     note:SetPoint("BOTTOMLEFT", 16, 14)
     note:SetText("Red: not in your spellbook yet. Saved per character.")
@@ -889,7 +941,10 @@ local function CreateConfig()
         if not ApplyBindingsAll() then Msg("bindings will update after combat.") end
     end)
 
-    f:SetScript("OnShow", function(self) for _, e in ipairs(self.boxes) do e:Refresh() end end)
+    f:SetScript("OnShow", function(self)
+        for _, e in ipairs(self.boxes) do e:Refresh() end
+        self.hideBlizz:SetChecked(DB.hideBlizzard)
+    end)
     f:Hide()
     return f
 end
@@ -934,6 +989,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
         DB.binds = DB.binds or {}
         DB.defaulted = DB.defaulted or {}
         if DB.locked == nil then DB.locked = true end
+        if DB.hideBlizzard == nil then DB.hideBlizzard = true end
     elseif event == "PLAYER_LOGIN" then
         charKey = UnitName("player") .. "-" .. GetRealmName()
         -- give defaults to characters with no bindings, and upgrade ones still
@@ -952,6 +1008,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
             CreateHeader()
             ApplySize(DB.w or W, DB.h or H)
             CreateLockButton()
+            HideBlizzard()
             SetLocked(DB.locked)
         end)
         for e in pairs(UNIT_EVENTS) do pcall(ev.RegisterEvent, ev, e) end
@@ -965,6 +1022,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
         Remap()
         C_Timer.After(0.1, UpdateMover)
+        HideBlizzard()
         for _, b in ipairs(buttons) do if b:IsShown() then UpdateAll(b) end end
     end
 end)
@@ -1001,12 +1059,14 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         if not s or s < 0.5 or s > 2 then Msg("scale must be between 0.5 and 2.") return end
         DB.scale = s
         if not OutOfCombat(function() ApplyScale(s) end) then Msg("will rescale after combat.") end
+    elseif cmd == "blizzard" then
+        SetHideBlizzard(not DB.hideBlizzard)
     elseif cmd == "reset" then
         DB.pos, DB.scale, DB.w, DB.h = nil, 1, nil, nil
         if not OutOfCombat(function() PlaceAnchor(); ApplyScale(1); ApplySize(W, H) end) then
             Msg("will reset after combat.")
         end
     else
-        Msg("/fhb  (click-casting)  |  /fhb unlock  |  /fhb lock  |  /fhb scale 0.5-2  |  /fhb reset")
+        Msg("/fhb  (click-casting)  |  /fhb unlock  |  /fhb lock  |  /fhb scale 0.5-2  |  /fhb blizzard  |  /fhb reset")
     end
 end

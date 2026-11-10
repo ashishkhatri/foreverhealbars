@@ -13,6 +13,8 @@ Minimalist grid raid frames for healers on WoW Forever.
 
 Each frame shows the player's name in their class color and how much health they're missing.
 
+Blizzard's own party and raid frames are hidden by default (the raid tools tab on the left edge stays). Untick **Hide Blizzard party and raid frames** in `/fhb`, or type `/fhb blizzard`, then `/reload` to bring them back.
+
 ## Install
 
 1. Download the latest `ForeverHealBars-*.zip` from [Releases](https://github.com/ashishkhatri/foreverhealbars/releases).
@@ -54,6 +56,7 @@ Use `/fhb` or `/healbars`.
 | `/fhb unlock` | Unlock the frames to drag them (same as the padlock) |
 | `/fhb lock` | Lock them again |
 | `/fhb scale 1.2` | Scale everything, text included (0.5 to 2) |
+| `/fhb blizzard` | Turn hiding Blizzard's party and raid frames on or off |
 | `/fhb reset` | Put the frames back in the default spot, size and scale |
 
 ## Releasing
