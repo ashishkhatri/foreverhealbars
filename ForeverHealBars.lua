@@ -670,8 +670,11 @@ local function GridShape()
 end
 
 local function CreateMover()
+    -- same layer as the frames, just above them, so bags and windows still
+    -- open on top of it
     mover = CreateFrame("Frame", nil, UIParent)
-    mover:SetFrameStrata("DIALOG")
+    mover:SetFrameStrata(header:GetFrameStrata())
+    mover:SetFrameLevel(header:GetFrameLevel() + 40)
     mover:SetPoint("TOPLEFT", anchor, "TOPLEFT", -4, 4)
     mover:EnableMouse(true)
     mover:RegisterForDrag("LeftButton")
@@ -770,8 +773,8 @@ local function CreateLockButton()
     lockBtn = CreateFrame("Button", nil, UIParent)
     lockBtn:SetSize(14, 14)
     lockBtn:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 3)
-    lockBtn:SetFrameStrata("DIALOG")
-    lockBtn:SetFrameLevel(20)
+    lockBtn:SetFrameStrata(header:GetFrameStrata())
+    lockBtn:SetFrameLevel(header:GetFrameLevel() + 50)
     lockBtn.icon = lockBtn:CreateTexture(nil, "ARTWORK")
     lockBtn.icon:SetAllPoints()
     lockBtn:SetScript("OnClick", function() SetLocked(not DB.locked) end)
