@@ -22,7 +22,7 @@ Each frame shows the player's name in their class color and how much health they
 
 `/fhb` opens a small window with a box for each click: left, right and middle, plain or with Shift, Ctrl or Alt. Type a spell name as it appears in your spellbook and press Enter. The spell's icon appears next to the box, and the text turns red if the spell isn't in your spellbook.
 
-- Plain left click targets the player and plain right click opens their menu, unless you bind something else there.
+- Any plain left or right click with nothing bound targets the player or opens their menu.
 - **Reset to class defaults** restores the bindings below.
 - You can also type `target` or `menu` in any box.
 - Bindings are saved per character.
@@ -32,14 +32,16 @@ Each frame shows the player's name in their class color and how much health they
 
 | | Priest | Druid | Paladin | Shaman | Mage |
 | --- | --- | --- | --- | --- | --- |
-| Shift + left | Flash Heal | Healing Touch | Flash of Light | Lesser Healing Wave | |
-| Ctrl + left | Greater Heal | Regrowth | Holy Light | Healing Wave | |
-| Alt + left | Renew | Rejuvenation | | Chain Heal | |
+| Left | Flash Heal | Healing Touch | Flash of Light | Healing Wave | target |
+| Right | Renew | Rejuvenation | Holy Light | Lesser Healing Wave | menu |
+| Shift + left | Greater Heal | Regrowth | | Chain Heal | |
 | Shift + right | Power Word: Shield | | Blessing of Protection | | |
 | Middle | Dispel Magic | Remove Curse | Cleanse | Cure Poison | Remove Lesser Curse |
 | Shift + middle | Cure Disease | Cure Poison | | Cure Disease | |
+| Alt + left | target | target | target | target | |
+| Alt + right | menu | menu | menu | menu | |
 
-Each binding casts the highest rank you know. Spells you haven't learned yet show in red in `/fhb` and start working once you learn them.
+Each binding casts the highest rank you know. Spells you haven't learned yet show in red in `/fhb` and start working once you learn them. Other classes keep plain left click to target and right click for the menu.
 
 ## Commands
 

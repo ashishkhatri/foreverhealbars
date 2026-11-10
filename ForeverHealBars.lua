@@ -60,27 +60,54 @@ local DEBUFF_COLOR = DebuffTypeColor or {
 }
 
 -- Default click-casting per class. Keys: modifier prefix + mouse button
--- (1 left, 2 right, 3 middle). Plain left/right stay target/menu. Spells a
--- character hasn't learned yet simply do nothing (they show red in /fhb).
+-- (1 left, 2 right, 3 middle). Healers get their main heals on plain clicks,
+-- with target / menu moved to Alt. Spells a character hasn't learned yet
+-- simply do nothing (they show red in /fhb).
+local HEALER_EXTRAS = { ["alt-1"] = "target", ["alt-2"] = "menu" }
 local CLASS_DEFAULTS = {
     PRIEST = {
-        ["shift-1"] = "Flash Heal", ["ctrl-1"] = "Greater Heal", ["alt-1"] = "Renew",
-        ["shift-2"] = "Power Word: Shield", ["3"] = "Dispel Magic", ["shift-3"] = "Cure Disease",
+        ["1"] = "Flash Heal", ["2"] = "Renew",
+        ["shift-1"] = "Greater Heal", ["shift-2"] = "Power Word: Shield",
+        ["3"] = "Dispel Magic", ["shift-3"] = "Cure Disease",
     },
     DRUID = {
-        ["shift-1"] = "Healing Touch", ["ctrl-1"] = "Regrowth", ["alt-1"] = "Rejuvenation",
+        ["1"] = "Healing Touch", ["2"] = "Rejuvenation",
+        ["shift-1"] = "Regrowth",
         ["3"] = "Remove Curse", ["shift-3"] = "Cure Poison",
     },
     PALADIN = {
-        ["shift-1"] = "Flash of Light", ["ctrl-1"] = "Holy Light",
-        ["shift-2"] = "Blessing of Protection", ["3"] = "Cleanse",
+        ["1"] = "Flash of Light", ["2"] = "Holy Light",
+        ["shift-2"] = "Blessing of Protection",
+        ["3"] = "Cleanse",
     },
     SHAMAN = {
-        ["shift-1"] = "Lesser Healing Wave", ["ctrl-1"] = "Healing Wave", ["alt-1"] = "Chain Heal",
+        ["1"] = "Healing Wave", ["2"] = "Lesser Healing Wave",
+        ["shift-1"] = "Chain Heal",
         ["3"] = "Cure Poison", ["shift-3"] = "Cure Disease",
     },
     MAGE = { ["3"] = "Remove Lesser Curse" },
 }
+for class, t in pairs(CLASS_DEFAULTS) do
+    if t["1"] then for k, v in pairs(HEALER_EXTRAS) do t[k] = v end end
+end
+
+-- The 0.2.0 defaults, so characters that never changed them can be upgraded.
+local OLD_DEFAULTS = {
+    PRIEST = { ["shift-1"] = "Flash Heal", ["ctrl-1"] = "Greater Heal", ["alt-1"] = "Renew",
+        ["shift-2"] = "Power Word: Shield", ["3"] = "Dispel Magic", ["shift-3"] = "Cure Disease" },
+    DRUID = { ["shift-1"] = "Healing Touch", ["ctrl-1"] = "Regrowth", ["alt-1"] = "Rejuvenation",
+        ["3"] = "Remove Curse", ["shift-3"] = "Cure Poison" },
+    PALADIN = { ["shift-1"] = "Flash of Light", ["ctrl-1"] = "Holy Light",
+        ["shift-2"] = "Blessing of Protection", ["3"] = "Cleanse" },
+    SHAMAN = { ["shift-1"] = "Lesser Healing Wave", ["ctrl-1"] = "Healing Wave", ["alt-1"] = "Chain Heal",
+        ["3"] = "Cure Poison", ["shift-3"] = "Cure Disease" },
+}
+
+local function SameBinds(a, b)
+    for k, v in pairs(a) do if b[k] ~= v then return false end end
+    for k, v in pairs(b) do if a[k] ~= v then return false end end
+    return true
+end
 
 local function ClassDefaults()
     local _, class = UnitClass("player")
@@ -604,7 +631,7 @@ local function CreateConfig()
     help:SetPoint("TOPRIGHT", -16, -32)
     help:SetJustifyH("LEFT")
     help:SetText("Type a spell name as it appears in your spellbook, then press Enter. "
-        .. "|cffaaaaaatarget|r and |cffaaaaaamenu|r also work. Blank = default (left: target, right: menu).")
+        .. "|cffaaaaaatarget|r and |cffaaaaaamenu|r also work. Blank plain left / right = target / menu.")
 
     local top = -78
     for c, label in ipairs(CLICK_LABEL) do
@@ -717,11 +744,16 @@ ev:SetScript("OnEvent", function(_, event, arg1)
         if DB.locked == nil then DB.locked = true end
     elseif event == "PLAYER_LOGIN" then
         charKey = UnitName("player") .. "-" .. GetRealmName()
-        if not DB.defaulted[charKey] then
-            DB.defaulted[charKey] = true
-            if not DB.binds[charKey] or not next(DB.binds[charKey]) then
+        -- give defaults to characters with no bindings, and upgrade ones still
+        -- on the previous defaults; anything customised is left alone
+        local seen = DB.defaulted[charKey]
+        if seen ~= 2 then
+            local b = DB.binds[charKey]
+            local _, class = UnitClass("player")
+            if not b or not next(b) or (OLD_DEFAULTS[class] and SameBinds(b, OLD_DEFAULTS[class])) then
                 DB.binds[charKey] = ClassDefaults()
             end
+            DB.defaulted[charKey] = 2
         end
         OutOfCombat(function()
             CreateHeader()
