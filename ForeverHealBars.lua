@@ -16,6 +16,7 @@ local header, anchor, mover
 local buttons = {}                    -- every unit button the header made
 local byUnit = {}                     -- unit token -> { button, ... }
 local pending = {}                    -- functions waiting for combat to end
+local OnMenuClick                     -- defined with the unit buttons
 
 local MODS = { "", "shift-", "ctrl-", "alt-" }
 local MOD_LABEL = { [""] = "Click", ["shift-"] = "Shift", ["ctrl-"] = "Ctrl", ["alt-"] = "Alt" }
@@ -311,9 +312,15 @@ local POWER_COLOR = {
     MANA = { 0.25, 0.5, 1 }, RAGE = { 0.9, 0.15, 0.15 }, ENERGY = { 1, 0.85, 0.2 },
     FOCUS = { 1, 0.5, 0.25 }, RUNIC_POWER = { 0, 0.82, 1 },
 }
+local function ApplyPowerShown(btn)
+    local on = DB.showPower
+    btn.c.power:SetShown(on)
+    btn.c.hp:SetPoint("BOTTOMRIGHT", 0, on and POWER_H or 0)
+end
+
 local function UpdatePower(btn)
     local u, c = btn.unit, btn.c
-    if not u or not UnitExists(u) then return end
+    if not u or not UnitExists(u) or not DB.showPower then return end
     local _, token = UnitPowerType(u)
     local col = token and POWER_COLOR[token]
     if not col and token and PowerBarColor and PowerBarColor[token] then
@@ -468,8 +475,15 @@ end
 ---------------------------------------------------------------------------
 -- Click-casting
 ---------------------------------------------------------------------------
+-- WoW only lets "target" and "menu" through on clicks that Blizzard's Click
+-- Casting has an interaction for (by default plain left / plain right). Other
+-- clicks target through a secure macro filled in at click time, and open the
+-- menu directly (menus aren't protected).
+local menuClicks = {}                -- "alt-2" = true etc., opened by OnMenuClick
+
 local function ApplyBindings(btn)
     local binds = Binds()
+    wipe(menuClicks)
     for _, mod in ipairs(MODS) do
         for _, click in ipairs(CLICKS) do
             local val = binds[mod .. click]
@@ -488,6 +502,12 @@ local function ApplyBindings(btn)
             elseif mod == "" and click == 2 then
                 typ = "togglemenu"
             end
+            if typ == "target" and not (mod == "" and click == 1) then
+                typ = "macro"                       -- "*macrotext*" set on click
+            elseif typ == "togglemenu" and not (mod == "" and click == 2) then
+                typ = nil
+                menuClicks[mod .. click] = true
+            end
             btn:SetAttribute(mod .. "type" .. click, typ)
             btn:SetAttribute(mod .. "spell" .. click, spell)
         end
@@ -503,6 +523,31 @@ end
 ---------------------------------------------------------------------------
 -- The group header
 ---------------------------------------------------------------------------
+local secureHandler = CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
+
+local CLICK_NUM = { LeftButton = 1, RightButton = 2, MiddleButton = 3 }
+local function OpenMenu(unit)
+    if not unit or not UnitExists(unit) or not UnitPopup_OpenMenu then return end
+    local which
+    if unit == "player" then
+        which = "SELF"
+    elseif unit:match("^party%d") then
+        which = "PARTY"
+    elseif unit:match("^raid%d") then
+        which = "RAID_PLAYER"
+    else
+        which = "PLAYER"
+    end
+    UnitPopup_OpenMenu(which, { unit = unit })
+end
+
+OnMenuClick = function(btn, button)
+    local n = CLICK_NUM[button]
+    if not n then return end
+    local mod = IsAltKeyDown() and "alt-" or IsControlKeyDown() and "ctrl-" or IsShiftKeyDown() and "shift-" or ""
+    if menuClicks[mod .. n] then OpenMenu(btn.unit) end
+end
+
 -- Called by the header (through CallMethod) for each button it creates.
 local function InitButton(self, name)
     local btn = _G[name]
@@ -510,7 +555,14 @@ local function InitButton(self, name)
     btn.fhb = true
     buttons[#buttons + 1] = btn
     Build(btn)
+    ApplyPowerShown(btn)
     btn:RegisterForClicks("AnyUp")
+    -- secure pre-click snippet: point the target macro at this frame's unit
+    SecureHandlerWrapScript(btn, "OnClick", secureHandler, [[
+        local u = self:GetAttribute("unit")
+        if u then self:SetAttribute("*macrotext*", "/target " .. u) end
+    ]])
+    btn:HookScript("OnClick", OnMenuClick)
     ApplyBindings(btn)
     btn:HookScript("OnAttributeChanged", function(b, key, value)
         if key == "unit" then
@@ -868,7 +920,7 @@ local config
 local function CreateConfig()
     local f = CreateFrame("Frame", "ForeverHealBarsConfig", UIParent, "BasicFrameTemplateWithInset")
     local colW, rowH = 150, 30
-    f:SetSize(90 + colW * #CLICKS + 20, 152 + rowH * #MODS)
+    f:SetSize(90 + colW * #CLICKS + 20, 176 + rowH * #MODS)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
@@ -955,6 +1007,23 @@ local function CreateConfig()
     hide:SetScript("OnClick", function(self) SetHideBlizzard(self:GetChecked() and true or false) end)
     f.hideBlizz = hide
 
+    local pwr = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+    pwr:SetSize(22, 22)
+    pwr:SetPoint("BOTTOMLEFT", hide, "TOPLEFT", 0, 0)
+    local pwrLabel = pwr.Text or pwr.text or pwr:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    pwrLabel:ClearAllPoints()
+    pwrLabel:SetPoint("LEFT", pwr, "RIGHT", 2, 0)
+    pwrLabel:SetFontObject("GameFontHighlightSmall")
+    pwrLabel:SetText("Show mana / rage / energy bar")
+    pwr:SetScript("OnClick", function(self)
+        DB.showPower = self:GetChecked() and true or false
+        for _, b in ipairs(buttons) do
+            ApplyPowerShown(b)
+            if b.unit and b:IsShown() then UpdatePower(b) end
+        end
+    end)
+    f.showPower = pwr
+
     local note = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     note:SetPoint("BOTTOMLEFT", 16, 14)
     note:SetText("Red: not in your spellbook yet. Saved per character.")
@@ -972,6 +1041,7 @@ local function CreateConfig()
     f:SetScript("OnShow", function(self)
         for _, e in ipairs(self.boxes) do e:Refresh() end
         self.hideBlizz:SetChecked(DB.hideBlizzard)
+        self.showPower:SetChecked(DB.showPower)
     end)
     f:Hide()
     return f
@@ -1018,6 +1088,7 @@ ev:SetScript("OnEvent", function(_, event, arg1)
         DB.defaulted = DB.defaulted or {}
         if DB.locked == nil then DB.locked = true end
         if DB.hideBlizzard == nil then DB.hideBlizzard = true end
+        if DB.showPower == nil then DB.showPower = false end
     elseif event == "PLAYER_LOGIN" then
         charKey = UnitName("player") .. "-" .. GetRealmName()
         -- give defaults to characters with no bindings, and upgrade ones still
