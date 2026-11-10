@@ -3,7 +3,7 @@
 Minimalist grid raid frames for healers on WoW Forever.
 
 - **Grid layout.** Compact squares, five per column, one column per group. Works solo, in a party and in raids up to 40.
-- **Click-casting.** Bind spells to left, right and middle click, with or without Shift, Ctrl or Alt, then click a frame to cast on that player.
+- **Click-casting.** Bind spells to left, right, middle, mouse 4 and mouse 5, with or without Shift, Ctrl or Alt, then click a frame to cast on that player.
 - **Your HoTs.** Small icons in the top-right corner of each frame.
 - **Dispellable debuffs.** The whole frame turns the debuff type's color (blue magic, purple curse, brown disease, green poison) when someone has a debuff you can remove.
 - **Incoming heals.** A light green extension on the health bar for heals about to land.
@@ -24,7 +24,7 @@ Blizzard's own party and raid frames are hidden by default (the raid tools tab o
 
 ## Click-casting
 
-`/fhb` opens a small window with a box for each click: left, right and middle, plain or with Shift, Ctrl or Alt. Type a spell name as it appears in your spellbook and press Enter. The spell's icon appears next to the box, and the text turns red if the spell isn't in your spellbook.
+`/fhb` (or the gear next to the padlock) opens a window with a box for each click: left, right, middle, mouse 4 and mouse 5, plain or with Shift, Ctrl or Alt. Type a spell name as it appears in your spellbook and press Enter. The spell's icon appears next to the box, and the text turns red if the spell isn't in your spellbook.
 
 - Any plain left or right click with nothing bound targets the player or opens their menu.
 - **Reset to class defaults** restores the bindings below.

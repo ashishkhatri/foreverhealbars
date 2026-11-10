@@ -20,8 +20,8 @@ local OnMenuClick                     -- defined with the unit buttons
 
 local MODS = { "", "shift-", "ctrl-", "alt-" }
 local MOD_LABEL = { [""] = "Click", ["shift-"] = "Shift", ["ctrl-"] = "Ctrl", ["alt-"] = "Alt" }
-local CLICKS = { 1, 2, 3 }
-local CLICK_LABEL = { "Left", "Right", "Middle" }
+local CLICKS = { 1, 2, 3, 4, 5 }
+local CLICK_LABEL = { "Left", "Right", "Middle", "Mouse 4", "Mouse 5" }
 
 ---------------------------------------------------------------------------
 -- Helpers
@@ -525,7 +525,7 @@ end
 ---------------------------------------------------------------------------
 local secureHandler = CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
 
-local CLICK_NUM = { LeftButton = 1, RightButton = 2, MiddleButton = 3 }
+local CLICK_NUM = { LeftButton = 1, RightButton = 2, MiddleButton = 3, Button4 = 4, Button5 = 5 }
 local function OpenMenu(unit)
     if not unit or not UnitExists(unit) or not UnitPopup_OpenMenu then return end
     local which
@@ -919,7 +919,7 @@ local config
 
 local function CreateConfig()
     local f = CreateFrame("Frame", "ForeverHealBarsConfig", UIParent, "BasicFrameTemplateWithInset")
-    local colW, rowH = 150, 30
+    local colW, rowH = 130, 30
     f:SetSize(90 + colW * #CLICKS + 20, 176 + rowH * #MODS)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
