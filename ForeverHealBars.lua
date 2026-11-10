@@ -64,35 +64,50 @@ local DEBUFF_COLOR = DebuffTypeColor or {
 -- with target / menu moved to Alt. Spells a character hasn't learned yet
 -- simply do nothing (they show red in /fhb).
 local HEALER_EXTRAS = { ["alt-1"] = "target", ["alt-2"] = "menu" }
+-- Dispels are on Ctrl + left / right.
 local CLASS_DEFAULTS = {
     PRIEST = {
         ["1"] = "Flash Heal", ["2"] = "Renew",
         ["shift-1"] = "Greater Heal", ["shift-2"] = "Power Word: Shield",
-        ["3"] = "Dispel Magic", ["shift-3"] = "Cure Disease",
+        ["ctrl-1"] = "Dispel Magic", ["ctrl-2"] = "Cure Disease",
     },
     DRUID = {
         ["1"] = "Healing Touch", ["2"] = "Rejuvenation",
         ["shift-1"] = "Regrowth",
-        ["3"] = "Remove Curse", ["shift-3"] = "Cure Poison",
+        ["ctrl-1"] = "Remove Curse", ["ctrl-2"] = "Cure Poison",
     },
     PALADIN = {
         ["1"] = "Flash of Light", ["2"] = "Holy Light",
         ["shift-2"] = "Blessing of Protection",
-        ["3"] = "Cleanse",
+        ["ctrl-1"] = "Cleanse",
     },
     SHAMAN = {
         ["1"] = "Healing Wave", ["2"] = "Lesser Healing Wave",
         ["shift-1"] = "Chain Heal",
-        ["3"] = "Cure Poison", ["shift-3"] = "Cure Disease",
+        ["ctrl-1"] = "Cure Poison", ["ctrl-2"] = "Cure Disease",
     },
-    MAGE = { ["3"] = "Remove Lesser Curse" },
+    MAGE = { ["ctrl-1"] = "Remove Lesser Curse" },
 }
-for class, t in pairs(CLASS_DEFAULTS) do
+for _, t in pairs(CLASS_DEFAULTS) do
     if t["1"] then for k, v in pairs(HEALER_EXTRAS) do t[k] = v end end
 end
 
--- The 0.2.0 defaults, so characters that never changed them can be upgraded.
-local OLD_DEFAULTS = {
+-- Earlier default sets, so characters that never changed them get upgraded.
+local V021 = {
+    PRIEST = { ["1"] = "Flash Heal", ["2"] = "Renew", ["shift-1"] = "Greater Heal",
+        ["shift-2"] = "Power Word: Shield", ["3"] = "Dispel Magic", ["shift-3"] = "Cure Disease" },
+    DRUID = { ["1"] = "Healing Touch", ["2"] = "Rejuvenation", ["shift-1"] = "Regrowth",
+        ["3"] = "Remove Curse", ["shift-3"] = "Cure Poison" },
+    PALADIN = { ["1"] = "Flash of Light", ["2"] = "Holy Light",
+        ["shift-2"] = "Blessing of Protection", ["3"] = "Cleanse" },
+    SHAMAN = { ["1"] = "Healing Wave", ["2"] = "Lesser Healing Wave", ["shift-1"] = "Chain Heal",
+        ["3"] = "Cure Poison", ["shift-3"] = "Cure Disease" },
+    MAGE = { ["3"] = "Remove Lesser Curse" },
+}
+for _, t in pairs(V021) do
+    if t["1"] then for k, v in pairs(HEALER_EXTRAS) do t[k] = v end end
+end
+local V020 = {
     PRIEST = { ["shift-1"] = "Flash Heal", ["ctrl-1"] = "Greater Heal", ["alt-1"] = "Renew",
         ["shift-2"] = "Power Word: Shield", ["3"] = "Dispel Magic", ["shift-3"] = "Cure Disease" },
     DRUID = { ["shift-1"] = "Healing Touch", ["ctrl-1"] = "Regrowth", ["alt-1"] = "Rejuvenation",
@@ -102,6 +117,8 @@ local OLD_DEFAULTS = {
     SHAMAN = { ["shift-1"] = "Lesser Healing Wave", ["ctrl-1"] = "Healing Wave", ["alt-1"] = "Chain Heal",
         ["3"] = "Cure Poison", ["shift-3"] = "Cure Disease" },
 }
+
+local OLD_DEFAULTS = { V020, V021 }
 
 local function SameBinds(a, b)
     for k, v in pairs(a) do if b[k] ~= v then return false end end
@@ -746,14 +763,15 @@ ev:SetScript("OnEvent", function(_, event, arg1)
         charKey = UnitName("player") .. "-" .. GetRealmName()
         -- give defaults to characters with no bindings, and upgrade ones still
         -- on the previous defaults; anything customised is left alone
-        local seen = DB.defaulted[charKey]
-        if seen ~= 2 then
+        if DB.defaulted[charKey] ~= 3 then
             local b = DB.binds[charKey]
             local _, class = UnitClass("player")
-            if not b or not next(b) or (OLD_DEFAULTS[class] and SameBinds(b, OLD_DEFAULTS[class])) then
-                DB.binds[charKey] = ClassDefaults()
+            local stock = not b or not next(b)
+            for _, set in ipairs(OLD_DEFAULTS) do
+                if b and set[class] and SameBinds(b, set[class]) then stock = true end
             end
-            DB.defaulted[charKey] = 2
+            if stock then DB.binds[charKey] = ClassDefaults() end
+            DB.defaulted[charKey] = 3
         end
         OutOfCombat(function()
             CreateHeader()

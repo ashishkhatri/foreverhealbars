@@ -36,8 +36,8 @@ Each frame shows the player's name in their class color and how much health they
 | Right | Renew | Rejuvenation | Holy Light | Lesser Healing Wave | menu |
 | Shift + left | Greater Heal | Regrowth | | Chain Heal | |
 | Shift + right | Power Word: Shield | | Blessing of Protection | | |
-| Middle | Dispel Magic | Remove Curse | Cleanse | Cure Poison | Remove Lesser Curse |
-| Shift + middle | Cure Disease | Cure Poison | | Cure Disease | |
+| Ctrl + left | Dispel Magic | Remove Curse | Cleanse | Cure Poison | Remove Lesser Curse |
+| Ctrl + right | Cure Disease | Cure Poison | | Cure Disease | |
 | Alt + left | target | target | target | target | |
 | Alt + right | menu | menu | menu | menu | |
 
