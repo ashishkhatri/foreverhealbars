@@ -79,6 +79,9 @@ local function Border(parent, inset, size, layer)
             if r then self[i]:SetColorTexture(r, g, bl, 1); self[i]:Show() else self[i]:Hide() end
         end
     end
+    function b:SetAlpha(a)
+        for i = 1, 4 do self[i]:SetAlpha(a) end
+    end
     b:Set(nil)
     return b
 end
@@ -100,11 +103,19 @@ local function Build(btn)
     hp:SetMinMaxValues(0, 1)
     c.hp = hp
 
-    local inc = hp:CreateTexture(nil, "ARTWORK", nil, 1)
-    inc:SetColorTexture(0.47, 0.9, 0.55, 0.85)
+    -- Incoming heals: a second bar that starts where the health fill ends and
+    -- uses the same max, so its fill width equals the incoming amount. The
+    -- container clips anything past the frame's edge (overheal).
+    c:SetClipsChildren(true)
+    local inc = CreateFrame("StatusBar", nil, c)
+    inc:SetStatusBarTexture(BAR)
+    inc:SetStatusBarColor(0.47, 0.9, 0.55, 0.85)
     inc:SetPoint("TOPLEFT", hp:GetStatusBarTexture(), "TOPRIGHT")
     inc:SetPoint("BOTTOMLEFT", hp:GetStatusBarTexture(), "BOTTOMRIGHT")
-    inc:Hide()
+    inc:SetWidth(W)
+    inc:SetMinMaxValues(0, 1)
+    inc:SetValue(0)
+    inc:SetFrameLevel(hp:GetFrameLevel())
     c.inc = inc
 
     local text = CreateFrame("Frame", nil, c)
@@ -133,36 +144,53 @@ local function Build(btn)
     end
 
     c.dispel = Border(text, 0, 3)     -- inside edge: dispellable debuff, by type
-    c.aggro = Border(text, 2, 2)      -- outside edge: has aggro
+    c.aggro = Border(text, 2, 2)      -- outside edge: threat
+    c.aggro:Set(0.9, 0.15, 0.15)
+    c.aggro:SetAlpha(0)
+end
+
+-- WoW Forever hands addons health, range and threat as "secret" values:
+-- they can be shown (bars, text, alpha) but not compared or used in maths.
+-- Everything below passes them straight to widgets or to game helpers.
+local Missing = UnitHealthMissing or function(u) return UnitHealthMax(u) - UnitHealth(u) end
+
+-- Alpha 1 while below full health, 0 at full (hides "-0").
+local hideAtFull
+if C_CurveUtil and C_CurveUtil.CreateCurve and UnitHealthPercent then
+    hideAtFull = C_CurveUtil.CreateCurve()
+    hideAtFull:SetType(Enum.LuaCurveType.Step)
+    hideAtFull:AddPoint(0, 1)
+    hideAtFull:AddPoint(1, 0)
+end
+
+local function FromBool(b, yes, no)
+    if C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
+        return C_CurveUtil.EvaluateColorValueFromBoolean(b, yes, no)
+    end
+    return b and yes or no
 end
 
 local function UpdateHealth(btn)
     local u, c = btn.unit, btn.c
     if not u or not UnitExists(u) then return end
-    local cur, max = UnitHealth(u), UnitHealthMax(u)
-    if max <= 0 then max = 1 end
+    local max = UnitHealthMax(u)
     c.hp:SetMinMaxValues(0, max)
-    c.hp:SetValue(cur)
-
-    local inc = UnitGetIncomingHeals and UnitGetIncomingHeals(u) or 0
-    local missing = max - cur
-    if inc and inc > 0 and missing > 0 then
-        c.inc:SetWidth(math.max(1, math.min(inc, missing) / max * btn:GetWidth()))
-        c.inc:Show()
-    else
-        c.inc:Hide()
-    end
+    c.hp:SetValue(UnitHealth(u))
+    c.inc:SetMinMaxValues(0, max)
+    c.inc:SetValue(UnitGetIncomingHeals and UnitGetIncomingHeals(u) or 0)
 
     if not UnitIsConnected(u) then
-        c.status:SetText("Offline")
+        c.status:SetText("Offline"); c.status:SetAlpha(1)
     elseif UnitIsGhost(u) then
-        c.status:SetText("Ghost")
+        c.status:SetText("Ghost"); c.status:SetAlpha(1)
     elseif UnitIsDead(u) then
-        c.status:SetText("Dead")
-    elseif missing > 0 then
-        c.status:SetText("-" .. (BreakUpLargeNumbers and BreakUpLargeNumbers(missing) or missing))
+        c.status:SetText("Dead"); c.status:SetAlpha(1)
     else
-        c.status:SetText("")
+        local miss = Missing(u, false)
+        c.status:SetText("-" .. (BreakUpLargeNumbers and BreakUpLargeNumbers(miss) or miss))
+        if hideAtFull then
+            c.status:SetAlpha(UnitHealthPercent(u, false, hideAtFull))
+        end
     end
 end
 
@@ -170,20 +198,62 @@ local function UpdateIdentity(btn)
     local u, c = btn.unit, btn.c
     if not u or not UnitExists(u) then return end
     c.name:SetText(UnitName(u) or "")
-    local _, class = UnitClass(u)
-    local col = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
-    if col then
+    local ok, col = pcall(function()
+        local _, class = UnitClass(u)
+        return class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+    end)
+    if ok and col then
         c.hp:SetStatusBarColor(col.r * 0.8, col.g * 0.8, col.b * 0.8)
     else
         c.hp:SetStatusBarColor(0.3, 0.8, 0.3)
     end
 end
 
-local function UpdateAuras(btn)
-    local u, c = btn.unit, btn.c
-    if not u or not UnitExists(u) then return end
+-- Color for a debuff the player can dispel. Readable dispel type first; if
+-- that's hidden, ask the game to map it to a color for us.
+local dispelCurve
+local function DispelColor(u, a)
+    local dtype = a.dispelName
+    if type(dtype) == "string" and not (issecretvalue and issecretvalue(dtype)) and DEBUFF_COLOR[dtype] then
+        local col = DEBUFF_COLOR[dtype]
+        return col.r, col.g, col.b
+    end
+    if C_UnitAuras.GetAuraDispelTypeColor and C_CurveUtil and C_CurveUtil.CreateColorCurve and CreateColor then
+        if not dispelCurve then
+            dispelCurve = C_CurveUtil.CreateColorCurve()
+            dispelCurve:SetType(Enum.LuaCurveType.Step)
+            -- dispel type IDs: 1 Magic, 2 Curse, 3 Disease, 4 Poison
+            dispelCurve:AddPoint(0, CreateColor(0.8, 0.8, 0.8, 1))
+            dispelCurve:AddPoint(1, CreateColor(0.2, 0.6, 1, 1))
+            dispelCurve:AddPoint(2, CreateColor(0.6, 0, 1, 1))
+            dispelCurve:AddPoint(3, CreateColor(0.6, 0.4, 0, 1))
+            dispelCurve:AddPoint(4, CreateColor(0, 0.6, 0, 1))
+        end
+        return C_UnitAuras.GetAuraDispelTypeColor(u, a.auraInstanceID, dispelCurve):GetRGB()
+    end
+    return 0.8, 0.8, 0.8
+end
 
-    -- your HoTs: helpful auras you cast that have a duration
+local function UpdateAurasModern(btn)
+    local u, c = btn.unit, btn.c
+    -- your HoTs and shields ("RAID" = the buffs worth showing on raid frames)
+    local n = 0
+    for i = 1, 40 do
+        local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL|PLAYER|RAID")
+        if not a or n >= MAX_HOTS then break end
+        n = n + 1
+        c.hots[n]:SetTexture(a.icon)
+        c.hots[n]:Show()
+    end
+    for k = n + 1, MAX_HOTS do c.hots[k]:Hide() end
+
+    -- "HARMFUL|RAID" = debuffs you can dispel; the first one colors the border
+    local a = C_UnitAuras.GetAuraDataByIndex(u, 1, "HARMFUL|RAID")
+    if a then c.dispel:Set(DispelColor(u, a)) else c.dispel:Set(nil) end
+end
+
+local function UpdateAurasLegacy(btn)
+    local u, c = btn.unit, btn.c
     local n, i = 0, 1
     while n < MAX_HOTS do
         local name, icon, _, duration = AuraAt(u, i, "HELPFUL|PLAYER")
@@ -196,8 +266,6 @@ local function UpdateAuras(btn)
         i = i + 1
     end
     for k = n + 1, MAX_HOTS do c.hots[k]:Hide() end
-
-    -- first debuff you can dispel ("RAID" filter = dispellable by you)
     local found
     i = 1
     while true do
@@ -209,24 +277,37 @@ local function UpdateAuras(btn)
     if found then c.dispel:Set(found.r, found.g, found.b) else c.dispel:Set(nil) end
 end
 
-local function UpdateThreat(btn)
+local function UpdateAuras(btn)
     local u = btn.unit
     if not u or not UnitExists(u) then return end
-    local s = UnitThreatSituation and UnitThreatSituation(u)
-    if s and s >= 2 then btn.c.aggro:Set(0.9, 0.15, 0.15) else btn.c.aggro:Set(nil) end
+    local fn = (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) and UpdateAurasModern or UpdateAurasLegacy
+    -- if the game hides aura details right now, show nothing rather than erroring
+    if not pcall(fn, btn) then
+        for k = 1, MAX_HOTS do btn.c.hots[k]:Hide() end
+        btn.c.dispel:Set(nil)
+    end
+end
+
+-- Threat: 0 none, 1 high threat, 2-3 has aggro. Used directly as the outline's
+-- alpha (anything above 1 is fully visible), so it works when it's secret.
+local function UpdateThreat(btn)
+    local u = btn.unit
+    if not u or not UnitExists(u) or not UnitThreatSituation then return end
+    local s = UnitThreatSituation(u)
+    pcall(btn.c.aggro.SetAlpha, btn.c.aggro, s or 0)
 end
 
 local function UpdateRange(btn)
     local u = btn.unit
     if not u or not UnitExists(u) then return end
-    local alpha = 1
     if not UnitIsConnected(u) then
-        alpha = OOR_ALPHA
-    elseif not UnitIsUnit(u, "player") then
-        local inRange, checked = UnitInRange(u)
-        if checked and not inRange then alpha = OOR_ALPHA end
+        btn.c:SetAlpha(OOR_ALPHA)
+    elseif u == "player" then
+        btn.c:SetAlpha(1)
+    else
+        local inRange = UnitInRange(u)
+        btn.c:SetAlpha(FromBool(inRange, 1, OOR_ALPHA))
     end
-    btn.c:SetAlpha(alpha)
 end
 
 local function UpdateAll(btn)
