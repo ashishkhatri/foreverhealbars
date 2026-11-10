@@ -10,6 +10,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Resources.** A thin bar along the bottom of each frame shows mana (blue), rage (red) or energy (yellow).
 - **Range and aggro.** Out-of-range players fade, and players with aggro get a red outline (faint for high threat).
 - **Lock button.** A small padlock above the top-left corner unlocks the frames. While unlocked, drag anywhere on them to move them, and drag the bottom-right corner to resize: right for wider frames, down for taller ones. Click the padlock again to lock.
+- **Settings button.** A small gear next to the padlock opens the settings window (same as `/fhb`).
 
 Each frame shows the player's name in their class color and how much health they're missing.
 

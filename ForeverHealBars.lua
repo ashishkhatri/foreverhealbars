@@ -590,7 +590,8 @@ end
 ---------------------------------------------------------------------------
 -- Moving the frames
 ---------------------------------------------------------------------------
-local lockBtn
+local lockBtn, gearBtn
+local ToggleConfig                    -- defined with the settings window below
 local function LockIcon(locked)
     return string.format("Interface\\AddOns\\%s\\media\\%s", ADDON, locked and "locked" or "unlocked")
 end
@@ -690,7 +691,7 @@ local function CreateMover()
     -- hint pill to the right of the padlock
     local pill = CreateFrame("Frame", nil, mover)
     pill:SetHeight(16)
-    pill:SetPoint("BOTTOMLEFT", mover, "TOPLEFT", 22, 3)
+    pill:SetPoint("BOTTOMLEFT", mover, "TOPLEFT", 40, 3)
     local pbg = pill:CreateTexture(nil, "BACKGROUND")
     pbg:SetAllPoints()
     pbg:SetColorTexture(0.04, 0.05, 0.08, 0.85)
@@ -792,6 +793,30 @@ local function CreateLockButton()
     lockBtn:SetAlpha(0.6)
     lockBtn.icon:SetTexture(LockIcon(DB.locked))
     lockBtn.icon:SetVertexColor(0.75, 0.75, 0.75)
+
+    -- settings gear, just right of the padlock
+    gearBtn = CreateFrame("Button", nil, UIParent)
+    gearBtn:SetSize(14, 14)
+    gearBtn:SetPoint("LEFT", lockBtn, "RIGHT", 4, 0)
+    gearBtn:SetFrameStrata(lockBtn:GetFrameStrata())
+    gearBtn:SetFrameLevel(lockBtn:GetFrameLevel())
+    local gi = gearBtn:CreateTexture(nil, "ARTWORK")
+    gi:SetAllPoints()
+    gi:SetTexture(string.format("Interface\\AddOns\\%s\\media\\settings", ADDON))
+    gi:SetVertexColor(0.75, 0.75, 0.75)
+    gearBtn:SetAlpha(0.6)
+    gearBtn:SetScript("OnClick", function() ToggleConfig() end)
+    gearBtn:SetScript("OnEnter", function(self)
+        self:SetAlpha(1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+        GameTooltip:SetText("Settings", 1, 1, 1)
+        GameTooltip:AddLine("Click-casting and options (/fhb).", nil, nil, nil, true)
+        GameTooltip:Show()
+    end)
+    gearBtn:SetScript("OnLeave", function(self)
+        self:SetAlpha(0.6)
+        GameTooltip:Hide()
+    end)
 end
 
 ---------------------------------------------------------------------------
@@ -856,7 +881,7 @@ local function CreateConfig()
 
     local title = f.TitleText or f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     if not f.TitleText then title:SetPoint("TOP", 0, -5) end
-    title:SetText("Forever Heal Bars: click-casting")
+    title:SetText("Forever Heal Bars settings")
 
     local help = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     help:SetPoint("TOPLEFT", 16, -32)
@@ -952,7 +977,7 @@ local function CreateConfig()
     return f
 end
 
-local function ToggleConfig()
+ToggleConfig = function()
     config = config or CreateConfig()
     config:SetShown(not config:IsShown())
 end
