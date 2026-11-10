@@ -201,6 +201,24 @@ local function Build(btn)
     hp:SetMinMaxValues(0, 1)
     c.hp = hp
 
+    -- Damage flash: a bar just under the health bar that briefly keeps the
+    -- previous health. The chunk just lost shows past the health fill as a
+    -- light, striped segment, then snaps away.
+    local dmg = CreateFrame("StatusBar", nil, c)
+    dmg:SetAllPoints(hp)
+    dmg:SetStatusBarTexture(BAR)
+    dmg:SetStatusBarColor(1, 1, 1, 0.45)
+    dmg:SetMinMaxValues(0, 1)
+    dmg:SetValue(0)
+    local stripes = dmg:CreateTexture(nil, "ARTWORK", nil, 1)
+    stripes:SetTexture(string.format("Interface\\AddOns\\%s\\media\\stripes", ADDON), "REPEAT", "REPEAT")
+    stripes:SetHorizTile(true)
+    stripes:SetVertTile(true)
+    stripes:SetVertexColor(0, 0, 0, 0.35)
+    stripes:SetAllPoints(dmg:GetStatusBarTexture())
+    hp:SetFrameLevel(dmg:GetFrameLevel() + 1)
+    c.dmg = dmg
+
     -- Incoming heals: a second bar that starts where the health fill ends and
     -- uses the same max, so its fill width equals the incoming amount. The
     -- container clips anything past the frame's edge (overheal).
@@ -266,15 +284,6 @@ end
 -- Everything below passes them straight to widgets or to game helpers.
 local Missing = UnitHealthMissing or function(u) return UnitHealthMax(u) - UnitHealth(u) end
 
--- Alpha 1 while below full health, 0 at full (hides "-0").
-local hideAtFull
-if C_CurveUtil and C_CurveUtil.CreateCurve and UnitHealthPercent then
-    hideAtFull = C_CurveUtil.CreateCurve()
-    hideAtFull:SetType(Enum.LuaCurveType.Step)
-    hideAtFull:AddPoint(0, 1)
-    hideAtFull:AddPoint(1, 0)
-end
-
 local function FromBool(b, yes, no)
     if C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
         return C_CurveUtil.EvaluateColorValueFromBoolean(b, yes, no)
@@ -291,19 +300,35 @@ local function UpdateHealth(btn)
     c.inc:SetMinMaxValues(0, max)
     c.inc:SetValue(UnitGetIncomingHeals and UnitGetIncomingHeals(u) or 0)
 
-    if not UnitIsConnected(u) then
-        c.status:SetText("Offline"); c.status:SetAlpha(1)
-    elseif UnitIsGhost(u) then
-        c.status:SetText("Ghost"); c.status:SetAlpha(1)
-    elseif UnitIsDead(u) then
-        c.status:SetText("Dead"); c.status:SetAlpha(1)
-    else
-        local miss = Missing(u, false)
-        c.status:SetText("-" .. (BreakUpLargeNumbers and BreakUpLargeNumbers(miss) or miss))
-        if hideAtFull then
-            c.status:SetAlpha(UnitHealthPercent(u, false, hideAtFull))
-        end
+    local status = (not UnitIsConnected(u) and "Offline") or (UnitIsGhost(u) and "Ghost")
+        or (UnitIsDead(u) and "Dead") or nil
+    c.status:SetText(status or "")
+    -- centre the name unless there's a status line under it
+    local has = status ~= nil
+    if has ~= btn.hasStatus then
+        btn.hasStatus = has
+        c.name:ClearAllPoints()
+        c.name:SetPoint("CENTER", 0, (btn.roomy and has) and 6 or 0)
     end
+end
+
+-- On each health change, hold the previous value on the damage bar for 1s.
+-- Healing leaves it hidden under the health fill; the next change replaces it.
+-- Values may be secret, so they're only stored and handed to the bars.
+local DAMAGE_FLASH = 1
+local function OnHealthChanged(btn)
+    local u, c = btn.unit, btn.c
+    if not u or not UnitExists(u) then return end
+    local cur = UnitHealth(u)
+    c.dmg:SetMinMaxValues(0, UnitHealthMax(u))
+    c.dmg:SetValue(btn.lastHealth or cur)
+    btn.lastHealth = cur
+    btn.dmgToken = (btn.dmgToken or 0) + 1
+    local token = btn.dmgToken
+    C_Timer.After(DAMAGE_FLASH, function()
+        if btn.dmgToken == token then c.dmg:SetValue(0) end
+    end)
+    UpdateHealth(btn)
 end
 
 -- Mana, rage, energy (and friends). The type is readable; the amounts can be
@@ -566,6 +591,9 @@ local function InitButton(self, name)
     ApplyBindings(btn)
     btn:HookScript("OnAttributeChanged", function(b, key, value)
         if key == "unit" then
+            b.lastHealth = nil
+            b.dmgToken = (b.dmgToken or 0) + 1
+            b.c.dmg:SetValue(0)
             b.unit = value
             Remap()
             if value then UpdateAll(b) end
@@ -700,10 +728,10 @@ local function ApplySize(w, h)
         b.c.name:SetWidth(w - 6)
         b.c.inc:SetWidth(w)
         -- short frames: name only, centred; tall enough: name above missing health
-        local roomy = h >= 34
+        b.roomy = h >= 34
+        b.c.status:SetShown(b.roomy)
         b.c.name:ClearAllPoints()
-        b.c.name:SetPoint("CENTER", 0, roomy and 6 or 0)
-        b.c.status:SetShown(roomy)
+        b.c.name:SetPoint("CENTER", 0, (b.roomy and b.hasStatus) and 6 or 0)
     end
     anchor:SetSize(w, h)
     header:SetAttribute("initialConfigFunction", ConfigSnippet(w, h))
@@ -1062,7 +1090,7 @@ local function ForUnit(unit, fn)
 end
 
 local UNIT_EVENTS = {
-    UNIT_HEALTH = UpdateHealth,
+    UNIT_HEALTH = OnHealthChanged,
     UNIT_HEALTH_FREQUENT = UpdateHealth,
     UNIT_MAXHEALTH = UpdateHealth,
     UNIT_HEAL_PREDICTION = UpdateHealth,

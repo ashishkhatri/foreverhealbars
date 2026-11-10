@@ -14,7 +14,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Lock button.** A small padlock above the top-left corner unlocks the frames. While unlocked, drag anywhere on them to move them, and drag the bottom-right corner to resize: right for wider frames, down for taller ones. Click the padlock again to lock.
 - **Settings button.** A small gear next to the padlock opens the settings window (same as `/fhb`).
 
-Each frame shows the player's name in their class color and how much health they're missing.
+Each frame shows the player's name over a health bar in their class color. When someone takes damage, the chunk they just lost flashes as a light striped segment for a second (or until their health changes again).
 
 Blizzard's own party and raid frames are hidden by default (the raid tools tab on the left edge stays). Untick **Hide Blizzard party and raid frames** in `/fhb`, or type `/fhb blizzard`, then `/reload` to bring them back.
 
