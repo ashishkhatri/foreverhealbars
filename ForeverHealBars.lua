@@ -219,6 +219,16 @@ local function Build(btn)
     hp:SetFrameLevel(dmg:GetFrameLevel() + 1)
     c.dmg = dmg
 
+    -- fade-out used when the damage segment drains away
+    local fade = dmg:CreateAnimationGroup()
+    local a = fade:CreateAnimation("Alpha")
+    a:SetFromAlpha(1)
+    a:SetToAlpha(0)
+    a:SetDuration(0.6)
+    a:SetSmoothing("OUT")
+    fade:SetScript("OnFinished", function() dmg:Hide() end)
+    c.dmgFade = fade
+
     -- Incoming heals: a second bar that starts where the health fill ends and
     -- uses the same max, so its fill width equals the incoming amount. The
     -- container clips anything past the frame's edge (overheal).
@@ -328,19 +338,28 @@ end
 -- On each health change, hold the previous value on the damage bar for 1s.
 -- Healing leaves it hidden under the health fill; the next change replaces it.
 -- Values may be secret, so they're only stored and handed to the bars.
-local DAMAGE_FLASH = 1
+-- Damage flash timing: hold the lost chunk briefly, then drain it down to the
+-- current health while fading out (about a second in all).
+local DAMAGE_HOLD = 0.35
+local EASE = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
+
 local function OnHealthChanged(btn)
     local u, c = btn.unit, btn.c
     if not u or not UnitExists(u) then return end
     local cur = UnitHealth(u)
+    c.dmgFade:Stop()
+    c.dmg:SetAlpha(1)
     c.dmg:SetMinMaxValues(0, UnitHealthMax(u))
-    c.dmg:SetValue(btn.lastHealth or cur)
+    c.dmg:SetValue(btn.lastHealth or cur)      -- snap to the health before this change
     c.dmg:Show()
     btn.lastHealth = cur
     btn.dmgToken = (btn.dmgToken or 0) + 1
     local token = btn.dmgToken
-    C_Timer.After(DAMAGE_FLASH, function()
-        if btn.dmgToken == token then c.dmg:Hide() end
+    C_Timer.After(DAMAGE_HOLD, function()
+        if btn.dmgToken ~= token then return end
+        -- the bar eases itself toward the new value, so no maths on health
+        if EASE then c.dmg:SetValue(cur, EASE) end
+        c.dmgFade:Play()
     end)
     UpdateHealth(btn)
 end
@@ -609,6 +628,7 @@ local function InitButton(self, name)
         if key == "unit" then
             b.lastHealth = nil
             b.dmgToken = (b.dmgToken or 0) + 1
+            b.c.dmgFade:Stop()
             b.c.dmg:Hide()
             b.unit = value
             Remap()
