@@ -1,3 +1,5 @@
+<img src="logo.png" width="128" alt="Forever Heal Bars logo">
+
 # Forever Heal Bars
 
 Minimalist grid raid frames for healers on WoW Forever.
