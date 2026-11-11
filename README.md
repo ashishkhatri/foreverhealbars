@@ -12,6 +12,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Incoming heals.** A light green extension on the health bar for heals about to land, that slides out from the health edge when a heal starts, then softly pulses until it lands. HoTs (Renew, Rejuvenation, Regrowth) from anyone add a softer, steady segment of the same green after it showing what they still have left to heal, shrinking as they tick. When the game doesn't report a HoT's amount (common for other players' HoTs), the spell rank's base healing is used.
 - **Resources (optional).** Tick **Show mana / rage / energy bar** in settings for a thin bar along the bottom of each frame: mana (blue), rage (red) or energy (yellow). Off by default. While a player is casting, the mana that cast will cost shows as a lighter section at the end of their bar.
 - **Shields.** A thin white bar along the top of a frame shows how much absorb a shield (like Power Word: Shield) has left. It works in combat.
+- **Pets.** Each player's pet gets a narrower frame right beside its owner's, in a darker shade of the owner's class color, with the same click-casting. Untick **Show pets beside their owners** in `/fhb` (or type `/fhb pets`) to hide them.
 - **Your target.** The frame of whoever you have targeted gets a white outline.
 - **Range and aggro.** Out-of-range players are dimmed, and players with aggro get a red outline (faint for high threat).
 - **Lock button.** A small padlock above the top-left corner unlocks the frames. While unlocked, drag anywhere on them to move them, and drag the bottom-right corner to resize: right for wider frames, down for taller ones. Click the padlock again to lock.
@@ -62,6 +63,7 @@ Use `/fhb` or `/healbars`.
 | `/fhb unlock` | Unlock the frames to drag them (same as the padlock) |
 | `/fhb lock` | Lock them again |
 | `/fhb scale 1.2` | Scale everything, text included (0.5 to 2) |
+| `/fhb pets` | Show or hide pet frames beside their owners |
 | `/fhb round` | Turn the slightly rounded corners on or off (then `/reload`) |
 | `/fhb blizzard` | Turn hiding Blizzard's party and raid frames on or off |
 | `/fhb debug` | List the debuffs and buffs on your target (or yourself) and what the game reports about them |
