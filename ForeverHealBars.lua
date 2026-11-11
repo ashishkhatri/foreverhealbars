@@ -766,30 +766,62 @@ local function IsHarmful(u, a, id)
     return nil                              -- unknown: checked both ways later
 end
 
+local auraLog = {}         -- unit -> last few aura announcements, for /fhb debug
+local function Show(v)
+    if v == nil then return "nil" end
+    if issecretvalue and issecretvalue(v) then return "<hidden>" end
+    return tostring(v)
+end
+local function LogAura(u, text)
+    local l = auraLog[u] or {}
+    auraLog[u] = l
+    l[#l + 1] = string.format("%.1f %s", GetTime(), text)
+    if #l > 6 then table.remove(l, 1) end
+end
+
 local function NoteAuras(u, info)
-    if type(info) ~= "table" or info.isFullUpdate or not auraBook[u] then
+    local full = type(info) == "table" and info.isFullUpdate
+    if type(info) == "table" then
+        local okA, added = pcall(function() return info.addedAuras and #info.addedAuras or 0 end)
+        local okR, removed = pcall(function()
+            return info.removedAuraInstanceIDs and #info.removedAuraInstanceIDs or 0 end)
+        local first = ""
+        pcall(function()
+            local a = info.addedAuras and info.addedAuras[1]
+            if a then
+                first = string.format("  first: id=%s harmful=%s type=%s name=%s", Show(a.auraInstanceID),
+                    Show(a.isHarmful), Show(a.dispelName), Show(a.name))
+            end
+        end)
+        LogAura(u, string.format("full=%s added=%s removed=%s%s", Show(full),
+            okA and Show(added) or "error", okR and Show(removed) or "error", first))
+    end
+    if not Readable(full) then full = false end
+    if type(info) ~= "table" or full or not auraBook[u] then
         if not pcall(SeedAuras, u) and not pcall(SeedAuraIDs, u) then
             auraBook[u] = auraBook[u] or {}
         end
         return
     end
     local list = auraBook[u]
-    if info.addedAuras then
-        for _, a in ipairs(info.addedAuras) do
+    local ok, err = pcall(function()
+        for _, a in ipairs(info.addedAuras or {}) do
             local id = a.auraInstanceID
             if Readable(id) then
                 local okh, h = pcall(IsHarmful, u, a, id)
-                list[id] = { harmful = okh and h or nil,
-                    dtype = Readable(a.dispelName) and a.dispelName or nil }
+                local okt, t = pcall(function() return Readable(a.dispelName) and a.dispelName or nil end)
+                list[id] = { harmful = okh and h or nil, dtype = okt and t or nil }
                 if okh and h == false then list[id].harmful = false end
             end
         end
-    end
-    if info.removedAuraInstanceIDs then
-        for _, id in ipairs(info.removedAuraInstanceIDs) do
+    end)
+    if not ok then LogAura(u, "added: " .. tostring(err)) end
+    ok, err = pcall(function()
+        for _, id in ipairs(info.removedAuraInstanceIDs or {}) do
             if Readable(id) then list[id] = nil end
         end
-    end
+    end)
+    if not ok then LogAura(u, "removed: " .. tostring(err)) end
 end
 
 local function SortedIDs(list)
@@ -2054,7 +2086,7 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
                         local answers = {}
                         for _, flt in ipairs(DISPEL_FILTERS) do
                             local okf, out = isOut and pcall(isOut, fu, id, flt)
-                            answers[#answers + 1] = flt:gsub("HARMFUL|", "") .. "="
+                            answers[#answers + 1] = (flt:gsub("HARMFUL|", "")) .. "="
                                 .. (not isOut and "-" or not okf and "error" or show(out))
                         end
                         local oka, a = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, fu, id)
@@ -2064,12 +2096,13 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
                     end
                 end
                 Msg("  %s: %d tracked auras", fu, n)
+                for _, line in ipairs(auraLog[fu] or {}) do Msg("    announced %s", line) end
             end
         end
         local okAll, err = pcall(function()
             for _, flt in ipairs({ "HARMFUL|RAID_PLAYER_DISPELLABLE", "HARMFUL|RAID" }) do
                 local okf, r = pcall(C_UnitAuras.GetAuraDataByIndex, u, 1, flt)
-                Msg("  game filter %s: %s", flt, not okf and "not supported"
+                Msg("  game filter %s: %s", (flt:gsub("|", "||")), not okf and "not supported"
                     or (r and ("found " .. show(r.name)) or "nothing"))
             end
             -- what each frame showing this player computed for its HoT segment
