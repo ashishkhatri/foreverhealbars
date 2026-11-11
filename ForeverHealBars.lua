@@ -253,8 +253,10 @@ local function Build(btn)
     local hot = CreateFrame("StatusBar", nil, c)
     hot:SetStatusBarTexture(BAR)
     hot:SetStatusBarColor(HOT_COLOR[1], HOT_COLOR[2], HOT_COLOR[3], 0.35)
-    hot:SetPoint("TOPLEFT", inc:GetStatusBarTexture(), "TOPRIGHT")
-    hot:SetPoint("BOTTOMLEFT", inc:GetStatusBarTexture(), "BOTTOMRIGHT")
+    -- starts at the end of the health fill; moved after the cast-heal fill
+    -- while a heal is being cast (see PlaceHot)
+    hot:SetPoint("TOPLEFT", hp:GetStatusBarTexture(), "TOPRIGHT")
+    hot:SetPoint("BOTTOMLEFT", hp:GetStatusBarTexture(), "BOTTOMRIGHT")
     hot:SetWidth(W)
     hot:SetMinMaxValues(0, 1)
     hot:SetValue(0)
@@ -380,6 +382,17 @@ local function FromBool(b, yes, no)
     return b and yes or no
 end
 
+-- An empty status bar keeps its fill texture full width (just hidden), so the
+-- HoT segment may only follow the cast-heal fill while a heal is incoming;
+-- otherwise it would start past the frame's edge and be clipped away.
+local function PlaceHot(btn, afterIncoming)
+    local c = btn.c
+    local edge = (afterIncoming and c.inc or c.hp):GetStatusBarTexture()
+    c.hot:ClearAllPoints()
+    c.hot:SetPoint("TOPLEFT", edge, "TOPRIGHT")
+    c.hot:SetPoint("BOTTOMLEFT", edge, "BOTTOMRIGHT")
+end
+
 local function UpdateHealth(btn)
     local u, c = btn.unit, btn.c
     if not u or not UnitExists(u) then return end
@@ -397,13 +410,19 @@ local function UpdateHealth(btn)
             -- a heal just started: grow out from the health edge
             btn.incActive = true
             c.inc:SetValue(0)
+            c.inc:Show()
             c.incPulse:Play()
+            PlaceHot(btn, true)
         end
         if INC_EASE then c.inc:SetValue(incoming, INC_EASE) else c.inc:SetValue(incoming) end
     else
-        btn.incActive = false
+        if btn.incActive ~= false then
+            btn.incActive = false
+            PlaceHot(btn, false)
+        end
         c.incPulse:Stop()
         c.inc:SetValue(0)
+        c.inc:Hide()
     end
 
     local status = (not UnitIsConnected(u) and "Offline") or (UnitIsGhost(u) and "Ghost")
@@ -863,7 +882,7 @@ local function InitButton(self, name)
             b.dmgToken = (b.dmgToken or 0) + 1
             b.c.dmgFade:Stop()
             b.c.dmg:Hide()
-            b.incActive = false
+            b.incActive = nil            -- next update re-places the HoT segment
             b.c.incPulse:Stop()
             b.unit = value
             Remap()
