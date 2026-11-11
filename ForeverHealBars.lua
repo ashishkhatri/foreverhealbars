@@ -821,13 +821,22 @@ local function NoteAuras(u, info)
             end
         end
     end)
+    -- In combat the whole announcement is hidden: we only learn that
+    -- something changed. A debuff seen before combat may just have been
+    -- dispelled, so forget tracked debuffs rather than let one glow on.
+    local hidden = not ok
     if not ok then LogAura(u, "added: " .. tostring(err)) end
     ok, err = pcall(function()
         for _, id in ipairs(info.removedAuraInstanceIDs or {}) do
             if Readable(id) then list[id] = nil end
         end
     end)
-    if not ok then LogAura(u, "removed: " .. tostring(err)) end
+    if not ok then LogAura(u, "removed: " .. tostring(err)) hidden = true end
+    if hidden then
+        for id, e in pairs(list) do
+            if e.harmful ~= false then list[id] = nil end
+        end
+    end
 end
 
 local function SortedIDs(list)
