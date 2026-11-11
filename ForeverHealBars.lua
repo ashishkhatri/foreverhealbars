@@ -1242,6 +1242,10 @@ local function CreateConfig()
     f:SetScript("OnDragStop", f.StopMovingOrSizing)
     f:SetClampedToScreen(true)
     tinsert(UISpecialFrames, f:GetName())   -- Escape closes it
+    -- the template's close button goes through HideUIPanel, which the game
+    -- blocks in combat; just hide the window instead
+    local close = f.CloseButton or _G[f:GetName() .. "CloseButton"]
+    if close then close:SetScript("OnClick", function() f:Hide() end) end
 
     local title = f.TitleText or f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     if not f.TitleText then title:SetPoint("TOP", 0, -5) end
