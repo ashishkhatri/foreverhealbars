@@ -1462,7 +1462,10 @@ local function CreateConfig()
                 if not name and C_SpellBook and C_SpellBook.GetSpellBookItemName and a1 then
                     name = C_SpellBook.GetSpellBookItemName(a1, a2)
                 end
-                ClearCursor()
+                -- Clearing the cursor makes the game notify other UI (action and
+                -- totem bars) right away; run it securely so those updates don't
+                -- count as this addon's and trip over hidden cooldown values.
+                if securecallfunction then securecallfunction(ClearCursor) else ClearCursor() end
                 if name then Assign(self, name) end
                 return true
             end
