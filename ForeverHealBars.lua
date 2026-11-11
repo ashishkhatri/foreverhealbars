@@ -729,8 +729,10 @@ local function SeedAuras(u)                -- the full list (out of combat)
             if not a then break end
             local id = a.auraInstanceID
             if Readable(id) then
+                local exp = a.expirationTime
                 list[id] = { harmful = filter == "HARMFUL",
-                    dtype = Readable(a.dispelName) and a.dispelName or nil }
+                    dtype = Readable(a.dispelName) and a.dispelName or nil,
+                    expires = (Readable(exp) and type(exp) == "number" and exp > 0) and exp or nil }
             end
         end
     end
@@ -810,7 +812,11 @@ local function NoteAuras(u, info)
             if Readable(id) then
                 local okh, h = pcall(IsHarmful, u, a, id)
                 local okt, t = pcall(function() return Readable(a.dispelName) and a.dispelName or nil end)
-                list[id] = { harmful = okh and h or nil, dtype = okt and t or nil }
+                local oke, exp = pcall(function()
+                    local e = a.expirationTime
+                    return (Readable(e) and type(e) == "number" and e > 0) and e or nil
+                end)
+                list[id] = { harmful = okh and h or nil, dtype = okt and t or nil, expires = oke and exp or nil }
                 if okh and h == false then list[id].harmful = false end
             end
         end
@@ -831,8 +837,27 @@ local function SortedIDs(list)
     return ids
 end
 
+-- The game's "removed" notice doesn't always get through in combat (a dispel
+-- would then glow until combat ends), so before trusting the list, ask about
+-- each aura by ID and drop any the game says is gone or that has run out.
+local function PruneAuras(u)
+    local list = auraBook[u]
+    if not list then return end
+    local now = GetTime()
+    local byID = C_UnitAuras.GetAuraDataByAuraInstanceID
+    for id, e in pairs(list) do
+        local gone = e.expires and now > e.expires + 0.5
+        if not gone and byID then
+            local ok, a = pcall(byID, u, id)
+            if ok and a == nil then gone = true end
+        end
+        if gone then list[id] = nil end
+    end
+end
+
 -- Route 3: go through the tracked debuffs and ask about each one.
 local function FindDispelByID(u)
+    pcall(PruneAuras, u)
     local list = auraBook[u]
     if not list then return end
     local ids = SortedIDs(list)
