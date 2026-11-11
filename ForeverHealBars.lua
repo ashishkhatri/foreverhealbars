@@ -1318,8 +1318,8 @@ local config
 
 local function CreateConfig()
     local f = CreateFrame("Frame", "ForeverHealBarsConfig", UIParent, "BasicFrameTemplateWithInset")
-    local colW, rowH = 130, 30
-    f:SetSize(90 + colW * #CLICKS + 20, 176 + rowH * #MODS)
+    local colW, rowH, SLOT = 84, 46, 36
+    f:SetSize(math.max(560, 90 + colW * #CLICKS + 20), 178 + rowH * #MODS)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
@@ -1344,57 +1344,79 @@ local function CreateConfig()
     help:SetPoint("TOPLEFT", 16, -32)
     help:SetPoint("TOPRIGHT", -16, -32)
     help:SetJustifyH("LEFT")
-    help:SetText("Drag a spell from your spellbook onto a box, or type its name and press Enter. "
-        .. "|cffaaaaaatarget|r and |cffaaaaaamenu|r also work. Blank plain left / right = target / menu.")
+    help:SetText("Drag a spell from your spellbook onto a square. Right-click a square to clear it; "
+        .. "right-click an empty one to set Target or Menu.")
 
-    local top = -78
+    local top, x0 = -64, 90
     for c, label in ipairs(CLICK_LABEL) do
         local h = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        -- line up with the text box, not the spell icon beside it
-        h:SetPoint("TOPLEFT", 90 + (c - 1) * colW + 21, top)
+        h:SetPoint("TOP", f, "TOPLEFT", x0 + (c - 1) * colW + colW / 2, top)
         h:SetText(label)
     end
 
+    local ACCENT_DROP = { 0.2, 1, 0.6 }
     f.boxes = {}
     for r, mod in ipairs(MODS) do
         local y = top - 20 - (r - 1) * rowH
         local l = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        l:SetPoint("TOPLEFT", 18, y - 4)
+        l:SetPoint("LEFT", f, "TOPLEFT", 18, y - SLOT / 2)
         l:SetText(MOD_LABEL[mod])
         for c, click in ipairs(CLICKS) do
             local key = mod .. click
-            local icon = f:CreateTexture(nil, "ARTWORK")
-            icon:SetSize(18, 18)
-            icon:SetPoint("TOPLEFT", 90 + (c - 1) * colW, y)
-            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            -- a square slot the size of a spell icon
+            local sq = CreateFrame("Button", nil, f)
+            sq:SetSize(SLOT, SLOT)
+            sq:SetPoint("TOPLEFT", x0 + (c - 1) * colW + (colW - SLOT) / 2, y)
+            sq:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            sq.key = key
+            local bg = sq:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            bg:SetColorTexture(0.06, 0.07, 0.1, 0.95)
+            sq.edge = Border(sq, 0, 1, "BORDER")
+            sq.icon = sq:CreateTexture(nil, "ARTWORK")
+            sq.icon:SetPoint("TOPLEFT", 2, -2)
+            sq.icon:SetPoint("BOTTOMRIGHT", -2, 2)
+            sq.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            sq.label = sq:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            sq.label:SetPoint("CENTER")
+            sq.drop = Border(sq, 2, 2)                      -- outline while dragging a spell
+            sq.drop:Set(ACCENT_DROP[1], ACCENT_DROP[2], ACCENT_DROP[3])
+            sq.drop:SetAlpha(0)
+            sq.hl = sq:CreateTexture(nil, "OVERLAY")        -- the square you'd drop on
+            sq.hl:SetAllPoints()
+            sq.hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+            sq.hl:SetBlendMode("ADD")
+            sq.hl:Hide()
 
-            local e = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-            e:SetSize(colW - 34, 20)
-            e:SetPoint("LEFT", icon, "RIGHT", 8, 0)
-            e:SetAutoFocus(false)
-            e.key, e.icon = key, icon
-
-            function e:Refresh()
-                local v = Binds()[self.key] or ""
-                self:SetText(v)
-                self:SetCursorPosition(0)
-                local low = v:lower()
-                if v == "" or low == "target" or low == "menu" then
-                    self.icon:Hide()
-                    self:SetTextColor(1, 1, 1)
+            function sq:Refresh()
+                local v = Binds()[self.key]
+                local low = v and v:lower()
+                self.icon:Hide()
+                self.label:SetText("")
+                self.edge:Set(0.35, 0.36, 0.42)
+                if not v then
+                    -- defaults for plain left / right
+                    if mod == "" and click == 1 then self.label:SetText("|cff707070Target|r")
+                    elseif mod == "" and click == 2 then self.label:SetText("|cff707070Menu|r") end
+                elseif low == "target" then
+                    self.label:SetText("Target")
+                elseif low == "menu" then
+                    self.label:SetText("Menu")
                 else
                     local name, tex = SpellInfo(v)
-                    self.icon:SetTexture(tex or 134400)  -- question mark if unknown
+                    self.icon:SetTexture(tex or 134400)     -- question mark if unknown
                     self.icon:Show()
-                    if name then self:SetTextColor(1, 1, 1) else self:SetTextColor(1, 0.3, 0.3) end
+                    if not name then self.edge:Set(1, 0.25, 0.25) end
                 end
             end
-            local function Save(self)
-                local v = strtrim(self:GetText() or "")
-                Binds()[self.key] = (v ~= "") and v or nil
+
+            local function Assign(self, v)
+                Binds()[self.key] = v
                 self:Refresh()
                 if not ApplyBindingsAll() then Msg("bindings will update after combat.") end
+                if GameTooltip:IsOwned(self) then self:GetScript("OnEnter")(self) end
             end
+
             -- a spell dragged from the spellbook and dropped (or clicked) here
             local function TakeCursorSpell(self)
                 local kind, a1, a2, a3 = GetCursorInfo()
@@ -1408,22 +1430,66 @@ local function CreateConfig()
                     name = C_SpellBook.GetSpellBookItemName(a1, a2)
                 end
                 ClearCursor()
-                if not name then return true end
-                self:SetText(name)
-                Save(self)
-                self:ClearFocus()
+                if name then Assign(self, name) end
                 return true
             end
-            e:SetScript("OnReceiveDrag", TakeCursorSpell)
-            e:HookScript("OnMouseDown", function(self)
-                if GetCursorInfo() == "spell" then TakeCursorSpell(self) end
+
+            sq:SetScript("OnReceiveDrag", TakeCursorSpell)
+            sq:SetScript("OnClick", function(self, button)
+                if TakeCursorSpell(self) then return end
+                if button == "RightButton" then
+                    local v = Binds()[self.key]
+                    local low = v and v:lower()
+                    if v and low ~= "target" and low ~= "menu" then Assign(self, nil)   -- clear a spell
+                    elseif not v then Assign(self, "target")
+                    elseif low == "target" then Assign(self, "menu")
+                    else Assign(self, nil) end
+                end
             end)
-            e:SetScript("OnEnterPressed", function(self) Save(self); self:ClearFocus() end)
-            e:SetScript("OnEditFocusLost", Save)
-            e:SetScript("OnEscapePressed", function(self) self:Refresh(); self:ClearFocus() end)
-            f.boxes[#f.boxes + 1] = e
+            sq:SetScript("OnEnter", function(self)
+                if GetCursorInfo() == "spell" then self.hl:Show() end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                local v = Binds()[self.key]
+                local low = v and v:lower()
+                local where = (MOD_LABEL[mod] == "Click" and "" or (MOD_LABEL[mod] .. " + ")) .. CLICK_LABEL[c]
+                GameTooltip:SetText(where, 1, 1, 1)
+                if not v then
+                    local def = (mod == "" and click == 1 and "Target (default)") or
+                        (mod == "" and click == 2 and "Menu (default)") or "Empty"
+                    GameTooltip:AddLine(def, 0.7, 0.7, 0.7)
+                    GameTooltip:AddLine("Drag a spell here. Right-click for Target / Menu.", 0.5, 0.5, 0.5, true)
+                elseif low == "target" or low == "menu" then
+                    GameTooltip:AddLine(low == "target" and "Target" or "Menu", 1, 0.82, 0)
+                    GameTooltip:AddLine("Right-click to change.", 0.5, 0.5, 0.5)
+                else
+                    local name = SpellInfo(v)
+                    GameTooltip:AddLine(v, 1, 0.82, 0)
+                    if not name then GameTooltip:AddLine("Not in your spellbook yet.", 1, 0.3, 0.3) end
+                    GameTooltip:AddLine("Right-click to clear.", 0.5, 0.5, 0.5)
+                end
+                GameTooltip:Show()
+            end)
+            sq:SetScript("OnLeave", function(self)
+                self.hl:Hide()
+                GameTooltip_Hide()
+            end)
+            f.boxes[#f.boxes + 1] = sq
         end
     end
+
+    -- while a spell is on the cursor, outline every square and light up the
+    -- one under the mouse
+    f.dragging = false
+    f:SetScript("OnUpdate", function(self)
+        local dragging = GetCursorInfo() == "spell"
+        if dragging ~= self.dragging then
+            self.dragging = dragging
+            for _, sq in ipairs(self.boxes) do sq.drop:SetAlpha(dragging and 0.8 or 0) end
+        end
+        if dragging then
+            for _, sq in ipairs(self.boxes) do sq.hl:SetShown(sq:IsMouseOver()) end
+        end
+    end)
 
     local hide = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
     hide:SetSize(22, 22)
@@ -1455,7 +1521,7 @@ local function CreateConfig()
 
     local note = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     note:SetPoint("BOTTOMLEFT", 16, 14)
-    note:SetText("Red: not in your spellbook yet. Saved per character.")
+    note:SetText("Red border: not in your spellbook yet. Saved per character.")
 
     local reset = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     reset:SetSize(150, 22)
