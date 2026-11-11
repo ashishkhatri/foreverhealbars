@@ -1444,7 +1444,6 @@ local menuClicks = {}                -- "alt-2" = true etc., opened by OnMenuCli
 -- combat too.
 local REZ_SPELLS = { PRIEST = "Resurrection", PALADIN = "Redemption", SHAMAN = "Ancestral Spirit", DRUID = "Rebirth" }
 local function RezSpell()
-    if DB and DB.clickRez == false then return nil end
     local _, class = UnitClass("player")
     local spell = REZ_SPELLS[class]
     return spell and SpellInfo(spell) and spell or nil
@@ -2005,7 +2004,7 @@ local config
 local function CreateConfig()
     local f = CreateFrame("Frame", "ForeverHealBarsConfig", UIParent, "BasicFrameTemplateWithInset")
     local colW, rowH, SLOT = 84, 46, 36
-    f:SetSize(math.max(560, 90 + colW * #CLICKS + 20), 234 + rowH * #MODS)
+    f:SetSize(math.max(560, 90 + colW * #CLICKS + 20), 206 + rowH * #MODS)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
@@ -2223,9 +2222,6 @@ local function CreateConfig()
     -- every square and light up the one under the mouse
     f.dragging = false
     f:SetScript("OnUpdate", function(self)
-        if self.lock and self.lock:GetChecked() ~= (DB.locked and true or false) then
-            self.lock:SetChecked(DB.locked and true or false)
-        end
         if self.moving then
             local x, y = GetCursorPosition()
             local sc = ghost:GetEffectiveScale()
@@ -2259,7 +2255,7 @@ local function CreateConfig()
     remindLabel:ClearAllPoints()
     remindLabel:SetPoint("LEFT", remind, "RIGHT", 2, 0)
     remindLabel:SetFontObject("GameFontHighlightSmall")
-    remindLabel:SetText("Flash buffs players need from you")
+    remindLabel:SetText("Buffwatch")
     remind:SetScript("OnClick", function(self)
         DB.buffReminders = self:GetChecked() and true or false
         for _, b in ipairs(buttons) do if b.c then UpdateBuffNeeds(b) end end
@@ -2291,7 +2287,7 @@ local function CreateConfig()
     petsLabel:ClearAllPoints()
     petsLabel:SetPoint("LEFT", pets, "RIGHT", 2, 0)
     petsLabel:SetFontObject("GameFontHighlightSmall")
-    petsLabel:SetText("Show pets beside their owners")
+    petsLabel:SetText("Show pets")
     pets:SetScript("OnClick", function(self)
         DB.pets = self:GetChecked() and true or false
         if ApplyPets() then C_Timer.After(0.1, UpdateMover) else Msg("pets will update after combat.") end
@@ -2299,33 +2295,10 @@ local function CreateConfig()
     f.showPets = pets
 
     -- frames row: lock, scale, reset position, debug (same as the /fhb commands)
-    local lock = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
-    lock:SetSize(22, 22)
-    lock:SetPoint("BOTTOMLEFT", pwr, "TOPLEFT", 0, 10)
-    local lockLabel = lock.Text or lock.text or lock:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    lockLabel:ClearAllPoints()
-    lockLabel:SetPoint("LEFT", lock, "RIGHT", 2, 0)
-    lockLabel:SetFontObject("GameFontHighlightSmall")
-    lockLabel:SetText("Lock frames")
-    lock:SetScript("OnClick", function(self) SetLocked(self:GetChecked() and true or false) end)
-    f.lock = lock
 
-    local rezBox = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
-    rezBox:SetSize(22, 22)
-    rezBox:SetPoint("BOTTOMLEFT", lock, "TOPLEFT", 0, 2)
-    local rezLabel = rezBox.Text or rezBox.text or rezBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    rezLabel:ClearAllPoints()
-    rezLabel:SetPoint("LEFT", rezBox, "RIGHT", 2, 0)
-    rezLabel:SetFontObject("GameFontHighlightSmall")
-    rezLabel:SetText("Left-click a dead player to resurrect them")
-    rezBox:SetScript("OnClick", function(self)
-        DB.clickRez = self:GetChecked() and true or false
-        if not ApplyBindingsAll() then Msg("will update after combat.") end
-    end)
-    f.clickRez = rezBox
 
     local scaleLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    scaleLabel:SetPoint("LEFT", lockLabel, "RIGHT", 28, 0)
+    scaleLabel:SetPoint("BOTTOMLEFT", pwr, "TOPLEFT", 4, 14)
     scaleLabel:SetText("Scale")
     local slider = CreateFrame("Slider", nil, f)
     slider:SetOrientation("HORIZONTAL")
@@ -2357,7 +2330,7 @@ local function CreateConfig()
 
     local debugBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     debugBtn:SetSize(110, 22)
-    debugBtn:SetPoint("BOTTOMRIGHT", -14, 90)          -- level with the Lock frames row
+    debugBtn:SetPoint("BOTTOMRIGHT", -14, 86)          -- level with the Scale row
     debugBtn:SetText("Debug target")
     debugBtn:SetScript("OnClick", function() SlashCmdList.FOREVERHEALBARS("debug") end)
     debugBtn:SetScript("OnEnter", function(self)
@@ -2368,18 +2341,6 @@ local function CreateConfig()
     end)
     debugBtn:SetScript("OnLeave", GameTooltip_Hide)
 
-    local resetFrames = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    resetFrames:SetSize(150, 22)
-    resetFrames:SetPoint("RIGHT", debugBtn, "LEFT", -8, 0)
-    resetFrames:SetText("Reset frame position")
-    resetFrames:SetScript("OnClick", function() SlashCmdList.FOREVERHEALBARS("reset") end)
-    resetFrames:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Reset frame position", 1, 1, 1)
-        GameTooltip:AddLine("Puts the frames back in the default spot, size and scale. Same as /fhb reset.", 0.7, 0.7, 0.7, true)
-        GameTooltip:Show()
-    end)
-    resetFrames:SetScript("OnLeave", GameTooltip_Hide)
 
     local note = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     note:SetPoint("BOTTOMLEFT", 16, 14)
@@ -2427,8 +2388,6 @@ local function CreateConfig()
         self.showPower:SetChecked(DB.showPower)
         self.showPets:SetChecked(DB.pets ~= false)
         self.showReminders:SetChecked(DB.buffReminders ~= false)
-        self.lock:SetChecked(DB.locked and true or false)
-        self.clickRez:SetChecked(DB.clickRez ~= false)
         self.scale.syncing = true
         self.scale:SetValue(DB.scale or 1)
         self.scale.syncing = false
@@ -2498,7 +2457,6 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if DB.showPower == nil then DB.showPower = false end
         if DB.pets == nil then DB.pets = true end
         if DB.buffReminders == nil then DB.buffReminders = true end
-        if DB.clickRez == nil then DB.clickRez = true end
     elseif event == "PLAYER_LOGIN" then
         charKey = UnitName("player") .. "-" .. GetRealmName()
         -- give defaults to characters with no bindings, and upgrade ones still
@@ -2693,16 +2651,11 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
             end
         end)
         if not okAll then Msg("  couldn't read debuffs: %s", tostring(err)) end
-    elseif cmd == "rez" then
-        DB.clickRez = not DB.clickRez
-        if config and config.clickRez then config.clickRez:SetChecked(DB.clickRez) end
-        Msg("left-click to resurrect %s.", DB.clickRez and "on" or "off")
-        if not ApplyBindingsAll() then Msg("will update after combat.") end
     elseif cmd == "buffs" then
         DB.buffReminders = not DB.buffReminders
         if config and config.showReminders then config.showReminders:SetChecked(DB.buffReminders) end
         for _, b in ipairs(buttons) do if b.c then UpdateBuffNeeds(b) end end
-        Msg("buff reminders %s.", DB.buffReminders and "on" or "off")
+        Msg("Buffwatch %s.", DB.buffReminders and "on" or "off")
     elseif cmd == "pets" then
         DB.pets = not DB.pets
         if config and config.showPets then config.showPets:SetChecked(DB.pets) end
@@ -2717,7 +2670,7 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         end
         if config and config:IsShown() then config:GetScript("OnShow")(config) end
     else
-        Msg("/fhb  (settings)  |  unlock  |  lock  |  scale 0.5-2  |  pets  |  buffs  |  rez  |  blizzard  |  reset  |  debug"
+        Msg("/fhb  (settings)  |  unlock  |  lock  |  scale 0.5-2  |  pets  |  buffs  |  blizzard  |  reset  |  debug"
             .. "  (all of these are also in the settings window)")
     end
 end
