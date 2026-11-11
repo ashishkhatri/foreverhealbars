@@ -185,87 +185,6 @@ local function Border(parent, inset, size, layer)
     return b
 end
 
--- Slightly rounded frames. Fills are trimmed by four small corner masks
--- (white outside their square, so only the very corner is cut); outlines are
--- straight lines plus a quarter-ring at each corner, so they follow the curve.
-local ROUND_R = 3                     -- corner radius
-local function Rounded() return not DB or DB.round ~= false end
-local MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\media\\"
-
-local function RoundBorder(parent, inset, size, layer)
-    local R = ROUND_R + inset
-    local t = {}
-    for i = 1, 8 do
-        t[i] = parent:CreateTexture(nil, layer or "OVERLAY")
-        t[i].fhbSquare = true                         -- never trimmed by the masks
-    end
-    t[1]:SetPoint("TOPLEFT", -inset + R, inset);     t[1]:SetPoint("TOPRIGHT", inset - R, inset);      t[1]:SetHeight(size)
-    t[2]:SetPoint("BOTTOMLEFT", -inset + R, -inset); t[2]:SetPoint("BOTTOMRIGHT", inset - R, -inset);  t[2]:SetHeight(size)
-    t[3]:SetPoint("TOPLEFT", -inset, inset - R);     t[3]:SetPoint("BOTTOMLEFT", -inset, -inset + R);  t[3]:SetWidth(size)
-    t[4]:SetPoint("TOPRIGHT", inset, inset - R);     t[4]:SetPoint("BOTTOMRIGHT", inset, -inset + R);  t[4]:SetWidth(size)
-    for i = 1, 4 do t[i]:SetTexture(BAR) end
-    local ring = string.format("%sring_%d_%d", MEDIA, R, size)
-    local corners = {
-        { "TOPLEFT", -inset, inset, 0, 1, 0, 1 },     { "TOPRIGHT", inset, inset, 1, 0, 0, 1 },
-        { "BOTTOMLEFT", -inset, -inset, 0, 1, 1, 0 }, { "BOTTOMRIGHT", inset, -inset, 1, 0, 1, 0 },
-    }
-    for k, cn in ipairs(corners) do
-        local tex = t[4 + k]
-        tex:SetTexture(ring)
-        tex:SetSize(R, R)
-        tex:SetPoint(cn[1], cn[2], cn[3])
-        tex:SetTexCoord(cn[4], cn[5], cn[6], cn[7])
-    end
-    local b = { tex = t }
-    function b:Set(r, g, bl)
-        for i = 1, 8 do
-            if r then self.tex[i]:SetVertexColor(r, g, bl, 1); self.tex[i]:Show() else self.tex[i]:Hide() end
-        end
-    end
-    function b:SetAlpha(a)
-        for i = 1, 8 do self.tex[i]:SetAlpha(a) end
-    end
-    b:Set(nil)
-    return b
-end
-
--- outline: rounded when rounding is on
-local function Outline(parent, inset, size, layer)
-    if Rounded() then return RoundBorder(parent, inset, size, layer) end
-    return Border(parent, inset, size, layer)
-end
-
--- trim one texture's corners to the unit frame c's rounded shape
-local function RoundTexture(c, tex)
-    if not Rounded() or tex.fhbSquare or tex.fhbRounded or not tex.AddMaskTexture then return end
-    local owner = tex:GetParent()
-    if not owner or not owner.CreateMaskTexture then return end
-    owner.fhbMasks = owner.fhbMasks or {}
-    local masks = owner.fhbMasks[c]
-    if not masks then
-        masks = {}
-        for _, k in ipairs({ "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }) do
-            local m = owner:CreateMaskTexture()
-            m:SetTexture(MEDIA .. "round_" .. k:gsub("TOP", "t"):gsub("BOTTOM", "b"):gsub("LEFT", "l"):gsub("RIGHT", "r"),
-                "CLAMPTOWHITE", "CLAMPTOWHITE")
-            m:SetSize(ROUND_R, ROUND_R)
-            m:SetPoint(k, c, k)
-            masks[#masks + 1] = m
-        end
-        owner.fhbMasks[c] = masks
-    end
-    for _, m in ipairs(masks) do pcall(tex.AddMaskTexture, tex, m) end
-    tex.fhbRounded = true
-end
-
--- every texture under a frame (status bar fills included)
-local function RoundAll(c, frame)
-    for _, r in ipairs({ frame:GetRegions() }) do
-        if r:IsObjectType("Texture") and not r:IsObjectType("MaskTexture") then RoundTexture(c, r) end
-    end
-    for _, child in ipairs({ frame:GetChildren() }) do RoundAll(c, child) end
-end
-
 local BuildDispelFx                   -- defined with the dispel effect below
 local BuildAuraBoxes                  -- the game-drawn dispel glow and HoT icons, below
 
@@ -447,7 +366,7 @@ local function Build(btn)
     local selF = CreateFrame("Frame", nil, c)
     selF:SetAllPoints()
     selF:SetFrameLevel(dimF:GetFrameLevel() + 1)
-    c.selected = Outline(selF, 0, 2)
+    c.selected = Border(selF, 0, 2)
     c.selected:Set(1, 1, 1)
     c.selected:SetAlpha(0)
 
@@ -458,11 +377,9 @@ local function Build(btn)
     local aggroF = CreateFrame("Frame", nil, btn)
     aggroF:SetAllPoints(c)
     aggroF:SetFrameLevel(selF:GetFrameLevel() + 1)
-    c.aggro = Outline(aggroF, 2, 2)
+    c.aggro = Border(aggroF, 2, 2)
     c.aggro:Set(AGGRO_COLOR[1], AGGRO_COLOR[2], AGGRO_COLOR[3])
     c.aggro:SetAlpha(0)
-    for _, t in ipairs(c.hots) do t.fhbSquare = true end    -- icons stay square
-    RoundAll(c, c)
 end
 
 ---------------------------------------------------------------------------
@@ -488,7 +405,7 @@ BuildDispelFx = function(btn)
     a:SetDuration(1.25)          -- slow breathing, ~2.5s per cycle
     a:SetSmoothing("IN_OUT")
 
-    local outline = Outline(fx, 0, 1)
+    local outline = Border(fx, 0, 1)
 
     c.dispel = {}
     function c.dispel:Set(r, g, b)
@@ -544,12 +461,14 @@ local function InitDispelButton(btn, c)
     local wash = holder:CreateTexture(nil, "ARTWORK")
     wash:SetAllPoints()
     wash:SetTexture(BAR)
-    RoundTexture(c, wash)
-    local outline = Outline(holder, 0, 1)
-    outline:Set(1, 1, 1)
-    local edges = outline.tex or {}
-    if not outline.tex then for i = 1, 4 do edges[i] = outline[i] end end
+    local edges = {}
+    for i = 1, 4 do edges[i] = holder:CreateTexture(nil, "OVERLAY") end
+    edges[1]:SetPoint("TOPLEFT"); edges[1]:SetPoint("TOPRIGHT"); edges[1]:SetHeight(1)
+    edges[2]:SetPoint("BOTTOMLEFT"); edges[2]:SetPoint("BOTTOMRIGHT"); edges[2]:SetHeight(1)
+    edges[3]:SetPoint("TOPLEFT"); edges[3]:SetPoint("BOTTOMLEFT"); edges[3]:SetWidth(1)
+    edges[4]:SetPoint("TOPRIGHT"); edges[4]:SetPoint("BOTTOMRIGHT"); edges[4]:SetWidth(1)
     for _, t in ipairs({ wash, unpack(edges) }) do
+        if t ~= wash then t:SetTexture(BAR) end
         pcall(btn.AddDispelTypeTexture, btn, t, { style = DISPEL_TINT and DISPEL_TINT.PreserveAsset })
     end
     -- the same slow breathing as before (the wash only; the outline stays put)
@@ -2282,7 +2201,6 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if DB.locked == nil then DB.locked = true end
         if DB.hideBlizzard == nil then DB.hideBlizzard = true end
         if DB.showPower == nil then DB.showPower = false end
-        if DB.round == nil then DB.round = true end
         if DB.pets == nil then DB.pets = true end
     elseif event == "PLAYER_LOGIN" then
         charKey = UnitName("player") .. "-" .. GetRealmName()
@@ -2474,9 +2392,6 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         if config and config.showPets then config.showPets:SetChecked(DB.pets) end
         Msg("pets %s.", DB.pets and "shown beside their owners" or "hidden")
         if ApplyPets() then C_Timer.After(0.1, UpdateMover) else Msg("will update after combat.") end
-    elseif cmd == "round" then
-        DB.round = not DB.round
-        Msg("rounded corners %s. Type /reload to apply.", DB.round and "on" or "off")
     elseif cmd == "blizzard" then
         SetHideBlizzard(not DB.hideBlizzard)
     elseif cmd == "reset" then
