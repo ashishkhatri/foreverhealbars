@@ -1502,11 +1502,14 @@ end
 ---------------------------------------------------------------------------
 -- Hiding Blizzard's party and raid frames
 ---------------------------------------------------------------------------
--- The frames are moved under a hidden parent and stop listening for events.
+-- Hiding or re-parenting them from addon code runs their hide and layout code
+-- as this addon's work. That marks the game's shared screen-layout data, and
+-- the action bar refresh (page, stance and form changes) later trips over it,
+-- which can leave the action bars hidden until a /reload. So the addon only
+-- stops them listening for events (no game code runs) and hands hiding to a
+-- secure state driver, which hides them as the game's own code.
 -- The raid tools tab on the left edge of the screen is left alone. Bringing
 -- them back needs a /reload, since the game rebuilds them on load.
-local hider = CreateFrame("Frame")
-hider:Hide()
 local blizzHidden = false
 
 local function BlizzardFrames()
@@ -1523,8 +1526,7 @@ local function HideBlizzard()
         for _, f in ipairs(BlizzardFrames()) do
             if f then
                 pcall(f.UnregisterAllEvents, f)
-                pcall(f.Hide, f)
-                pcall(f.SetParent, f, hider)
+                pcall(RegisterStateDriver, f, "visibility", "hide")
             end
         end
     end)
