@@ -60,19 +60,18 @@ Each binding casts the highest rank you know. Spells you haven't learned yet sho
 
 Use `/fhb` or `/healbars`.
 
-The settings window (`/fhb`) has controls for pets, Buffwatch, Blizzard frames, scale and debug. Locking is the padlock on the frames; `/fhb reset` is there in case the frames end up off screen.
+The settings window (`/fhb`) has controls for pets, Buffwatch, the mana bar and Blizzard frames. Locking is the padlock on the frames; `/fhb reset` is there in case the frames end up off screen, and `/fhb debug` for troubleshooting.
 
 | Command | What it does |
 | --- | --- |
 | `/fhb` | Open the click-casting window |
 | `/fhb unlock` | Unlock the frames to drag them (same as the padlock) |
 | `/fhb lock` | Lock them again |
-| `/fhb scale 1.2` | Scale everything, text included (0.5 to 2) |
 | `/fhb buffs` | Turn Buffwatch on or off |
 | `/fhb pets` | Show or hide pet frames beside their owners |
 | `/fhb blizzard` | Turn hiding Blizzard's party and raid frames on or off |
 | `/fhb debug` | List the debuffs and buffs on your target (or yourself) and what the game reports about them |
-| `/fhb reset` | Put the frames back in the default spot, size and scale |
+| `/fhb reset` | Put the frames back in the default spot and size |
 
 ## Releasing
 

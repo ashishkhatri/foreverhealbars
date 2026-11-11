@@ -1685,7 +1685,7 @@ local function CreateHeader()
     header = CreateFrame("Frame", "ForeverHealBarsHeader", UIParent, "SecureGroupHeaderTemplate")
     header.initButton = InitButton
     header:SetPoint("TOPLEFT", anchor, "TOPLEFT")
-    header:SetScale(DB.scale or 1)
+    DB.scale = nil                            -- (scale was removed; size is set by dragging the corner)
 
     header:SetAttribute("template", "SecureUnitButtonTemplate")
     header:SetAttribute("templateType", "Button")
@@ -1726,7 +1726,6 @@ local function LockIcon(locked)
 end
 
 local ACCENT = { 0.2, 1, 0.6 }
-local MIN_SCALE, MAX_SCALE = 0.5, 2
 
 -- Size of the whole grid on screen, never smaller than one frame.
 local function GridSize()
@@ -1747,15 +1746,6 @@ local function SetHint(text)
     mover.pill:SetWidth(mover.hint:GetStringWidth() + 16)
 end
 local DEFAULT_HINT = "Drag to move  |cff666a75·|r  drag the corner to resize"
-
-local function ApplyScale(sc)
-    sc = math.floor(sc * 20 + 0.5) / 20        -- 5% steps
-    sc = math.max(MIN_SCALE, math.min(MAX_SCALE, sc))
-    DB.scale = sc
-    header:SetScale(sc)
-    UpdateMover()
-    return sc
-end
 
 -- Frame (cell) size: width and height independently.
 local MIN_W, MAX_W, MIN_H, MAX_H = 40, 200, 22, 120
@@ -2004,7 +1994,7 @@ local config
 local function CreateConfig()
     local f = CreateFrame("Frame", "ForeverHealBarsConfig", UIParent, "BasicFrameTemplateWithInset")
     local colW, rowH, SLOT = 84, 46, 36
-    f:SetSize(math.max(560, 90 + colW * #CLICKS + 20), 206 + rowH * #MODS)
+    f:SetSize(math.max(560, 90 + colW * #CLICKS + 20), 178 + rowH * #MODS)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
@@ -2294,52 +2284,6 @@ local function CreateConfig()
     end)
     f.showPets = pets
 
-    -- frames row: lock, scale, reset position, debug (same as the /fhb commands)
-
-
-    local scaleLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    scaleLabel:SetPoint("BOTTOMLEFT", pwr, "TOPLEFT", 4, 14)
-    scaleLabel:SetText("Scale")
-    local slider = CreateFrame("Slider", nil, f)
-    slider:SetOrientation("HORIZONTAL")
-    slider:SetSize(150, 16)
-    slider:SetPoint("LEFT", scaleLabel, "RIGHT", 10, 0)
-    slider:SetMinMaxValues(MIN_SCALE, MAX_SCALE)
-    slider:SetValueStep(0.05)
-    if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
-    slider:EnableMouse(true)
-    local track = slider:CreateTexture(nil, "BACKGROUND")
-    track:SetPoint("LEFT", 0, 0)
-    track:SetPoint("RIGHT", 0, 0)
-    track:SetHeight(4)
-    track:SetColorTexture(0.25, 0.27, 0.33, 1)
-    local thumb = slider:CreateTexture(nil, "OVERLAY")
-    thumb:SetSize(10, 16)
-    thumb:SetColorTexture(ACCENT_DROP[1], ACCENT_DROP[2], ACCENT_DROP[3], 1)
-    slider:SetThumbTexture(thumb)
-    local scaleValue = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    scaleValue:SetPoint("LEFT", slider, "RIGHT", 8, 0)
-    slider:SetScript("OnValueChanged", function(self, v)
-        v = math.floor(v * 20 + 0.5) / 20
-        scaleValue:SetText(string.format("%.2f", v))
-        if self.syncing or v == DB.scale then return end
-        DB.scale = v
-        if not OutOfCombat(function() ApplyScale(v) end) then Msg("will rescale after combat.") end
-    end)
-    f.scale = slider
-
-    local debugBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    debugBtn:SetSize(110, 22)
-    debugBtn:SetPoint("BOTTOMRIGHT", -14, 86)          -- level with the Scale row
-    debugBtn:SetText("Debug target")
-    debugBtn:SetScript("OnClick", function() SlashCmdList.FOREVERHEALBARS("debug") end)
-    debugBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Debug target", 1, 1, 1)
-        GameTooltip:AddLine("Prints what the game reports about your target's buffs and debuffs (or yours) to chat. Same as /fhb debug.", 0.7, 0.7, 0.7, true)
-        GameTooltip:Show()
-    end)
-    debugBtn:SetScript("OnLeave", GameTooltip_Hide)
 
 
     local note = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -2388,9 +2332,6 @@ local function CreateConfig()
         self.showPower:SetChecked(DB.showPower)
         self.showPets:SetChecked(DB.pets ~= false)
         self.showReminders:SetChecked(DB.buffReminders ~= false)
-        self.scale.syncing = true
-        self.scale:SetValue(DB.scale or 1)
-        self.scale.syncing = false
     end)
     f:Hide()
     return f
@@ -2551,12 +2492,6 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         SetLocked(false)
     elseif cmd == "lock" then
         SetLocked(true)
-    elseif cmd == "scale" then
-        local s = tonumber(arg)
-        if not s or s < 0.5 or s > 2 then Msg("scale must be between 0.5 and 2.") return end
-        DB.scale = s
-        if not OutOfCombat(function() ApplyScale(s) end) then Msg("will rescale after combat.") end
-        if config and config:IsShown() then config:GetScript("OnShow")(config) end
     elseif cmd == "debug" then
         local u = (arg ~= "" and arg) or (UnitExists("target") and "target") or "player"
         local function show(v)
@@ -2664,13 +2599,13 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
     elseif cmd == "blizzard" then
         SetHideBlizzard(not DB.hideBlizzard)
     elseif cmd == "reset" then
-        DB.pos, DB.scale, DB.w, DB.h = nil, 1, nil, nil
-        if not OutOfCombat(function() PlaceAnchor(); ApplyScale(1); ApplySize(W, H) end) then
+        DB.pos, DB.w, DB.h = nil, nil, nil
+        if not OutOfCombat(function() PlaceAnchor(); ApplySize(W, H) end) then
             Msg("will reset after combat.")
         end
         if config and config:IsShown() then config:GetScript("OnShow")(config) end
     else
-        Msg("/fhb  (settings)  |  unlock  |  lock  |  scale 0.5-2  |  pets  |  buffs  |  blizzard  |  reset  |  debug"
+        Msg("/fhb  (settings)  |  unlock  |  lock  |  pets  |  buffs  |  blizzard  |  reset  |  debug"
             .. "  (all of these are also in the settings window)")
     end
 end
