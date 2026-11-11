@@ -9,4 +9,5 @@
 ## X-Curse-Project-ID: 1797248
 ## SavedVariables: ForeverHealBarsDB
 
+ForeverHealBars.xml
 ForeverHealBars.lua

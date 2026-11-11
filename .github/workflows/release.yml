@@ -48,6 +48,7 @@ jobs:
         run: |
           mkdir -p "dist/$ADDON"
           cp "$ADDON.toc" "$ADDON.lua" LICENSE "dist/$ADDON/"
+          if [ -f "$ADDON.xml" ]; then cp "$ADDON.xml" "dist/$ADDON/"; fi
           if [ -d media ]; then cp -r media "dist/$ADDON/"; fi
           cd dist && zip -r "$ADDON-${{ steps.ver.outputs.tag }}.zip" "$ADDON"
 

@@ -186,6 +186,7 @@ local function Border(parent, inset, size, layer)
 end
 
 local BuildDispelFx                   -- defined with the dispel effect below
+local BuildAuraBoxes                  -- the game-drawn dispel glow and HoT icons, below
 
 local function Build(btn)
     -- everything visual lives on a plain child frame, so fading it for range
@@ -370,7 +371,13 @@ local function Build(btn)
     c.selected:SetAlpha(0)
 
     BuildDispelFx(btn)
-    c.aggro = Border(text, 2, 2)      -- outside edge: threat
+    BuildAuraBoxes(btn)
+    -- threat: an outline just outside the frame. It lives on the unit button,
+    -- not inside the frame body, which cuts off anything past its edges.
+    local aggroF = CreateFrame("Frame", nil, btn)
+    aggroF:SetAllPoints(c)
+    aggroF:SetFrameLevel(selF:GetFrameLevel() + 1)
+    c.aggro = Border(aggroF, 2, 2)
     c.aggro:Set(AGGRO_COLOR[1], AGGRO_COLOR[2], AGGRO_COLOR[3])
     c.aggro:SetAlpha(0)
 end
@@ -413,6 +420,104 @@ BuildDispelFx = function(btn)
         fx:Show()
         self.shown = true
         if not pulse:IsPlaying() then pulse:Play() end
+    end
+end
+
+---------------------------------------------------------------------------
+-- Game-drawn auras. In combat WoW Forever refuses addon code every buff and
+-- debuff. The game's own aura containers still draw them: given a unit and a
+-- filter they fill their buttons themselves, and tint textures we hand them
+-- by debuff type. So the dispel glow and the HoT icons are built on those
+-- whenever the game has them; the addon's own readers are only the fallback.
+---------------------------------------------------------------------------
+local Flow = AnchorUtil and AnchorUtil.FlowDirection
+local DISPEL_TINT = Enum.CustomAuraButtonDispelTypeTextureStyle
+local HOT_MAX_SECONDS = 30            -- only short buffs (HoTs, shields) get an icon
+
+local function NewAuraBox(c, point, hDir)
+    local ok, box = pcall(CreateFrame, "AuraContainer", nil, c, "CustomAuraContainerTemplate")
+    if not ok or not box then return nil end
+    local set = pcall(function()
+        box:SetPoint(point, c, point, point:find("RIGHT") and -2 or 0, point:find("TOP") and -2 or 0)
+        box:SetFlowLayoutAnchorPoint(point)
+        box:SetFlowLayoutGrowthDirection(hDir, point:find("TOP") and Flow.Down or Flow.Up)
+        box:EnableMouse(false)
+        if box.SetEditModePreviewEnabled then box:SetEditModePreviewEnabled(false) end
+    end)
+    if not set then box:Hide() return nil end
+    return box
+end
+
+-- each dispel button the game makes gets the frame-wide glow and outline;
+-- the game shows it only while there's a debuff you can remove, tinted by type
+local function InitDispelButton(btn, c)
+    pcall(btn.SetIcon, btn, btn.Icon)
+    btn:EnableMouse(false)
+    if btn.fhbGlow then return end
+    local holder = CreateFrame("Frame", nil, btn)
+    holder:SetAllPoints(c)
+    holder:SetFrameLevel(c.hp:GetFrameLevel() + 1)        -- over the bars, under the name
+    local wash = holder:CreateTexture(nil, "ARTWORK")
+    wash:SetAllPoints()
+    wash:SetTexture(BAR)
+    local edges = {}
+    for i = 1, 4 do edges[i] = holder:CreateTexture(nil, "OVERLAY") end
+    edges[1]:SetPoint("TOPLEFT"); edges[1]:SetPoint("TOPRIGHT"); edges[1]:SetHeight(1)
+    edges[2]:SetPoint("BOTTOMLEFT"); edges[2]:SetPoint("BOTTOMRIGHT"); edges[2]:SetHeight(1)
+    edges[3]:SetPoint("TOPLEFT"); edges[3]:SetPoint("BOTTOMLEFT"); edges[3]:SetWidth(1)
+    edges[4]:SetPoint("TOPRIGHT"); edges[4]:SetPoint("BOTTOMRIGHT"); edges[4]:SetWidth(1)
+    for _, t in ipairs({ wash, unpack(edges) }) do
+        if t ~= wash then t:SetTexture(BAR) end
+        pcall(btn.AddDispelTypeTexture, btn, t, { style = DISPEL_TINT and DISPEL_TINT.PreserveAsset })
+    end
+    -- the same slow breathing as before (the wash only; the outline stays put)
+    local pulse = wash:CreateAnimationGroup()
+    pulse:SetLooping("BOUNCE")
+    local a = pulse:CreateAnimation("Alpha")
+    a:SetFromAlpha(0.6)
+    a:SetToAlpha(0.3)
+    a:SetDuration(1.25)
+    a:SetSmoothing("IN_OUT")
+    pulse:Play()
+    btn.fhbGlow = holder
+end
+
+BuildAuraBoxes = function(btn)
+    local c = btn.c
+    if not Flow then return end
+    local dispel = NewAuraBox(c, "BOTTOMLEFT", Flow and Flow.Right)
+    if dispel and not pcall(dispel.AddAuraGroup, dispel, "dispel", "HARMFUL|RAID", {
+        maxFrameCount = 1,
+        templateNames = { "ForeverHealBarsDispelTemplate" },
+        initializeFrame = function(b) InitDispelButton(b, c) end,
+    }) then dispel:Hide(); dispel = nil end
+    local hots = NewAuraBox(c, "TOPRIGHT", Flow and Flow.Left)
+    if hots and not pcall(hots.AddAuraGroup, hots, "hots", "HELPFUL|PLAYER", {
+        maxFrameCount = MAX_HOTS,
+        templateNames = { "ForeverHealBarsHotTemplate" },
+        initializeFrame = function(b)
+            pcall(b.SetIcon, b, b.Icon)
+            b:EnableMouse(false)
+        end,
+        candidateFilters = { maxDuration = HOT_MAX_SECONDS },
+        layout = { elementSpacing = 1 },
+    }) then hots:Hide(); hots = nil end
+    for _, box in ipairs({ dispel, hots }) do
+        pcall(box.SetFrameLevel, box, c.hp:GetFrameLevel() + 3)
+        pcall(box.SetUnit, box, "none")
+    end
+    c.dispelBox, c.hotBox = dispel, hots
+end
+
+-- point the containers at the frame's player (also called in combat)
+local function SetAuraBoxUnit(btn, unit)
+    for _, box in ipairs({ btn.c.dispelBox, btn.c.hotBox }) do
+        if box then
+            pcall(function()
+                if box:GetUnit() ~= (unit or "none") then box:SetUnit(unit or "none") end
+                box:Show()
+            end)
+        end
     end
 end
 
@@ -948,10 +1053,17 @@ local function UpdateDispel(btn)
 end
 
 local function UpdateAurasModern(btn)
-    if not pcall(UpdateHotIcons, btn) and not pcall(HotIconsByID, btn) then
+    if btn.c.hotBox then
+        for k = 1, MAX_HOTS do btn.c.hots[k]:Hide() end      -- the game draws them
+    elseif not pcall(UpdateHotIcons, btn) and not pcall(HotIconsByID, btn) then
         for k = 1, MAX_HOTS do btn.c.hots[k]:Hide() end
     end
-    UpdateDispel(btn)
+    if btn.c.dispelBox then
+        btn.c.dispel:Set(nil)                               -- the game draws it
+        lastDispel[btn.unit] = "drawn by the game's aura container"
+    else
+        UpdateDispel(btn)
+    end
 end
 
 local function UpdateAurasLegacy(btn)
@@ -1076,8 +1188,16 @@ end
 local function UpdateThreat(btn)
     local u = btn.unit
     if not u or not UnitExists(u) or not UnitThreatSituation then return end
-    local s = UnitThreatSituation(u)
-    pcall(btn.c.aggro.SetAlpha, btn.c.aggro, s or 0)
+    local ok, s = pcall(UnitThreatSituation, u)
+    if not ok then return end
+    if s == nil then
+        btn.c.aggro:SetAlpha(0)
+    elseif Readable(s) then
+        -- 3 tanking, 2 has aggro but not tanking, 1 about to pull aggro
+        btn.c.aggro:SetAlpha(s >= 2 and 1 or s == 1 and 0.35 or 0)
+    else
+        pcall(btn.c.aggro.SetAlpha, btn.c.aggro, s)          -- hidden: any threat shows fully
+    end
 end
 
 local function UpdateRange(btn)
@@ -1114,6 +1234,7 @@ local function UpdateShield(btn)
 end
 
 local function UpdateAll(btn)
+    SetAuraBoxUnit(btn, btn.unit)
     UpdateIdentity(btn)
     UpdateHealth(btn)
     UpdatePower(btn)
@@ -1259,6 +1380,7 @@ local function InitButton(self, name)
             b.c.incPulse:Stop()
             b.c.powerCost:Hide()
             b.unit = value
+            SetAuraBoxUnit(b, value)
             Remap()
             if value then UpdateAll(b) end
         end
@@ -1955,6 +2077,7 @@ local UNIT_EVENTS = {
     UNIT_MAXPOWER = UpdatePower,
     UNIT_DISPLAYPOWER = UpdatePower,
     UNIT_THREAT_SITUATION_UPDATE = UpdateThreat,
+    UNIT_THREAT_LIST_UPDATE = UpdateThreat,
     UNIT_NAME_UPDATE = UpdateIdentity,
 }
 
@@ -2051,6 +2174,7 @@ ev:SetScript("OnUpdate", function(_, dt)
     for _, b in ipairs(buttons) do
         if b.unit and b:IsShown() then
             UpdateRange(b)
+            UpdateThreat(b)
             if auras then UpdateAuras(b) end
         end
     end

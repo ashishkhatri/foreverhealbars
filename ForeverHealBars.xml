@@ -1,0 +1,28 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+  <!-- Templates for the game's own aura containers. In combat WoW Forever
+       hides buffs and debuffs from addon code, but these containers draw them
+       themselves. Their regions have to be declared in a forbidden-object scope. -->
+  <ScopedModifier useForbiddenObjectTable="true">
+    <!-- a debuff you can dispel: no visible icon of its own, it only carries the
+         frame-wide glow the game tints by debuff type (built in Lua) -->
+    <AuraButton name="ForeverHealBarsDispelTemplate" inherits="CustomAuraButtonTemplate" virtual="true">
+      <Size x="1" y="1"/>
+      <Layers>
+        <Layer level="ARTWORK">
+          <Texture parentKey="Icon" setAllPoints="true" alpha="0"/>
+        </Layer>
+      </Layers>
+    </AuraButton>
+    <!-- one of your HoTs: a small icon in the top-right corner -->
+    <AuraButton name="ForeverHealBarsHotTemplate" inherits="CustomAuraButtonTemplate" virtual="true">
+      <Size x="11" y="11"/>
+      <Layers>
+        <Layer level="ARTWORK">
+          <Texture parentKey="Icon" setAllPoints="true">
+            <TexCoords left="0.08" right="0.92" top="0.08" bottom="0.92"/>
+          </Texture>
+        </Layer>
+      </Layers>
+    </AuraButton>
+  </ScopedModifier>
+</Ui>
