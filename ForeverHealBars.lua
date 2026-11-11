@@ -555,7 +555,7 @@ end
 -- Buffs worth an icon: known HoTs and shields by name, or, if the game hides
 -- names, any of your buffs lasting 30 seconds or less.
 local HOT_ICONS = { ["Renew"] = true, ["Rejuvenation"] = true, ["Regrowth"] = true,
-    ["Power Word: Shield"] = true }
+    ["Power Word: Shield"] = true, ["First Aid"] = true }
 local function IsHotAura(a)
     local name = a.name
     if Readable(name) then return HOT_ICONS[name] == true end
@@ -682,26 +682,34 @@ end
 -- Rejuvenation or Regrowth (from anyone) adds what it has left to heal: the
 -- per-tick amount the aura reports, or, when the game doesn't report it
 -- (common for other players' HoTs), the spell rank's base healing.
-local HOT_TICK = 3                                  -- seconds between ticks
-local HOT_NAMES = { ["Renew"] = 5, ["Rejuvenation"] = 4, ["Regrowth"] = 7 }   -- ticks
--- spell ID -> { total base healing, ticks } (Classic ranks)
+-- name -> { ticks, seconds between ticks }
+local HOT_NAMES = {
+    ["Renew"] = { 5, 3 }, ["Rejuvenation"] = { 4, 3 }, ["Regrowth"] = { 7, 3 },
+    ["First Aid"] = { 8, 1 },                             -- bandages
+}
+-- spell ID -> { total base healing, ticks, interval } (Classic ranks)
 local HOT_RANKS = {}
 for _, spell in ipairs({
-    { 5, { 139, 45 }, { 6074, 100 }, { 6075, 175 }, { 6076, 245 }, { 6077, 315 },          -- Renew
-         { 6078, 400 }, { 10927, 510 }, { 10928, 650 }, { 10929, 810 }, { 25315, 970 } },
-    { 4, { 774, 32 }, { 1058, 56 }, { 1430, 116 }, { 2090, 180 }, { 2091, 244 },            -- Rejuvenation
-         { 3627, 304 }, { 8910, 388 }, { 9839, 488 }, { 9840, 608 }, { 9841, 756 }, { 25299, 888 } },
-    { 7, { 8936, 98 }, { 8938, 175 }, { 8939, 259 }, { 8940, 343 }, { 8941, 427 },          -- Regrowth (HoT part)
-         { 9750, 546 }, { 9856, 686 }, { 9857, 861 }, { 9858, 1064 } },
+    { 5, 3, { 139, 45 }, { 6074, 100 }, { 6075, 175 }, { 6076, 245 }, { 6077, 315 },       -- Renew
+            { 6078, 400 }, { 10927, 510 }, { 10928, 650 }, { 10929, 810 }, { 25315, 970 } },
+    { 4, 3, { 774, 32 }, { 1058, 56 }, { 1430, 116 }, { 2090, 180 }, { 2091, 244 },         -- Rejuvenation
+            { 3627, 304 }, { 8910, 388 }, { 9839, 488 }, { 9840, 608 }, { 9841, 756 }, { 25299, 888 } },
+    { 7, 3, { 8936, 98 }, { 8938, 175 }, { 8939, 259 }, { 8940, 343 }, { 8941, 427 },       -- Regrowth (HoT part)
+            { 9750, 546 }, { 9856, 686 }, { 9857, 861 }, { 9858, 1064 } },
+    { 8, 1, { 746, 66 }, { 1159, 114 }, { 3267, 161 }, { 3268, 301 }, { 7926, 400 },        -- bandages
+            { 7927, 640 }, { 10838, 800 }, { 10839, 1104 }, { 18608, 1360 }, { 18610, 2000 } },
 }) do
-    local ticks = spell[1]
-    for k = 2, #spell do HOT_RANKS[spell[k][1]] = { total = spell[k][2], ticks = ticks } end
+    for k = 3, #spell do
+        HOT_RANKS[spell[k][1]] = { total = spell[k][2], ticks = spell[1], every = spell[2] }
+    end
 end
 
 local function HotFromAura(a, now)
     local id, name = a.spellId, a.name
     local rank = Readable(id) and HOT_RANKS[id] or nil
-    local ticks = rank and rank.ticks or (Readable(name) and HOT_NAMES[name]) or nil
+    local byName = Readable(name) and HOT_NAMES[name] or nil
+    local ticks = rank and rank.ticks or (byName and byName[1]) or nil
+    local every = rank and rank.every or (byName and byName[2]) or 3
     if not ticks then return nil end
 
     local okp, pv = pcall(function() return a.points and a.points[1] end)
@@ -717,7 +725,7 @@ local function HotFromAura(a, now)
     local left = ticks
     local exp = a.expirationTime
     if Readable(exp) and type(exp) == "number" and exp > 0 then
-        left = math.max(0, math.min(ticks, math.ceil((exp - now) / HOT_TICK - 0.01)))
+        left = math.max(0, math.min(ticks, math.ceil((exp - now) / every - 0.01)))
     end
     return left * perTick
 end
