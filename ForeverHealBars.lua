@@ -1508,6 +1508,20 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
             end
             local r = C_UnitAuras.GetAuraDataByIndex(u, 1, "HARMFUL|RAID")
             Msg("  game's dispellable filter: %s", r and ("found " .. show(r.name)) or "nothing")
+            -- what each frame showing this player computed for its HoT segment
+            for _, b in ipairs(buttons) do
+                if b.unit and b:IsShown() then
+                    local same = (b.unit == u) or select(2, pcall(UnitIsUnit, b.unit, u)) == true
+                    if same then
+                        local hot = b.c.hot
+                        local okv, v = pcall(hot.GetValue, hot)
+                        local okw, w = pcall(function() return hot:GetStatusBarTexture():GetWidth() end)
+                        Msg("  HoT segment on %s: amount=%s  shown=%s  bar value=%s  fill width=%s  frame width=%s",
+                            b.unit, show(b.hotAmount), tostring(hot:IsShown()), okv and show(v) or "?",
+                            okw and show(w) or "?", show(hot:GetWidth()))
+                    end
+                end
+            end
             Msg("buffs on %s:", u)
             for i = 1, 40 do
                 local b = C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL")
