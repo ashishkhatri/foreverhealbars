@@ -67,7 +67,6 @@ local DEBUFF_COLOR = {
 }
 local AGGRO_COLOR = { 1, 0.59, 0 }               -- amber
 local INC_COLOR = { 0.67, 1, 0.47 }              -- bright lime
-local HOT_COLOR = { 0.47, 0.78, 0.82 }           -- pale aqua
 
 -- Default click-casting per class. Keys: modifier prefix + mouse button
 -- (1 left, 2 right, 3 middle). Healers get their main heals on plain clicks,
@@ -252,7 +251,8 @@ local function Build(btn)
     -- HoT prediction: starts where the incoming-heal fill ends, paler green.
     local hot = CreateFrame("StatusBar", nil, c)
     hot:SetStatusBarTexture(BAR)
-    hot:SetStatusBarColor(HOT_COLOR[1], HOT_COLOR[2], HOT_COLOR[3], 0.35)
+    -- same look as the cast-heal segment, softer and steady (no pulse)
+    hot:SetStatusBarColor(INC_COLOR[1], INC_COLOR[2], INC_COLOR[3], 0.4)
     -- starts at the end of the health fill; moved after the cast-heal fill
     -- while a heal is being cast (see PlaceHot)
     hot:SetPoint("TOPLEFT", hp:GetStatusBarTexture(), "TOPRIGHT")
@@ -261,13 +261,6 @@ local function Build(btn)
     hot:SetMinMaxValues(0, 1)
     hot:SetValue(0)
     hot:SetFrameLevel(inc:GetFrameLevel())
-    -- dashed lines over the HoT fill, so it can't be mistaken for cast heals
-    local dashes = hot:CreateTexture(nil, "ARTWORK", nil, 1)
-    dashes:SetTexture(string.format("Interface\\AddOns\\%s\\media\\dashes", ADDON), "REPEAT", "REPEAT")
-    dashes:SetHorizTile(true)
-    dashes:SetVertTile(true)
-    dashes:SetVertexColor(0.8, 0.95, 1, 0.9)
-    dashes:SetAllPoints(hot:GetStatusBarTexture())
     hot:Hide()                                -- only shown while a HoT is ticking
     c.hot = hot
 
