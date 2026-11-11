@@ -304,6 +304,14 @@ local function Build(btn)
     dim:SetAlpha(0)
     c.dim = dim
 
+    -- current target: a white outline, above the dimming so it always shows
+    local selF = CreateFrame("Frame", nil, c)
+    selF:SetAllPoints()
+    selF:SetFrameLevel(dimF:GetFrameLevel() + 1)
+    c.selected = Border(selF, 0, 2)
+    c.selected:Set(1, 1, 1)
+    c.selected:SetAlpha(0)
+
     c.dispel = {}
     function c.dispel:Set(r, g, b)
         if r then
@@ -632,6 +640,16 @@ local function UpdateRange(btn)
     end
 end
 
+-- "Is this my target" can be a hidden yes/no, so it goes straight to alpha.
+local function UpdateSelected(btn)
+    local u = btn.unit
+    if not u or not UnitExists(u) or not UnitExists("target") then
+        btn.c.selected:SetAlpha(0)
+        return
+    end
+    pcall(function() btn.c.selected:SetAlpha(FromBool(UnitIsUnit(u, "target"), 1, 0)) end)
+end
+
 local function UpdateAll(btn)
     UpdateIdentity(btn)
     UpdateHealth(btn)
@@ -639,6 +657,7 @@ local function UpdateAll(btn)
     UpdateAuras(btn)
     UpdateThreat(btn)
     UpdateRange(btn)
+    UpdateSelected(btn)
 end
 
 local function Remap()
@@ -1298,10 +1317,13 @@ ev:SetScript("OnEvent", function(_, event, arg1)
         end)
         for e in pairs(UNIT_EVENTS) do pcall(ev.RegisterEvent, ev, e) end
         ev:RegisterEvent("GROUP_ROSTER_UPDATE")
+        ev:RegisterEvent("PLAYER_TARGET_CHANGED")
         ev:RegisterEvent("PLAYER_ENTERING_WORLD")
         ev:RegisterEvent("PLAYER_REGEN_ENABLED")
         pcall(ev.RegisterEvent, ev, "SPELLS_CHANGED")
         RefreshCures()
+    elseif event == "PLAYER_TARGET_CHANGED" then
+        for _, b in ipairs(buttons) do if b.unit and b:IsShown() then UpdateSelected(b) end end
     elseif event == "SPELLS_CHANGED" then
         RefreshCures()
         for _, b in ipairs(buttons) do if b.unit and b:IsShown() then UpdateAuras(b) end end
