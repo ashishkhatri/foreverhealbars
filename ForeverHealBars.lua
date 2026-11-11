@@ -1299,7 +1299,7 @@ end
 local function UpdateBuffNeeds(btn)
     local c, u = btn.c, btn.unit
     local shown = 0
-    if DB.buffReminders ~= false and #myBuffs > 0 and u and UnitExists(u) and not InCombatLockdown()
+    if DB.buffwatch and #myBuffs > 0 and u and UnitExists(u) and not InCombatLockdown()
         and UnitIsConnected(u) and not UnitIsDeadOrGhost(u) then
         local ok = pcall(function()
             -- what this player has, and how long it has left
@@ -2248,7 +2248,7 @@ local function CreateConfig()
     remindLabel:SetFontObject("GameFontHighlightSmall")
     remindLabel:SetText("Buffwatch")
     remind:SetScript("OnClick", function(self)
-        DB.buffReminders = self:GetChecked() and true or false
+        DB.buffwatch = self:GetChecked() and true or false
         for _, b in ipairs(buttons) do if b.c then UpdateBuffNeeds(b) end end
     end)
     f.showReminders = remind
@@ -2332,7 +2332,7 @@ local function CreateConfig()
         self.hideBlizz:SetChecked(DB.hideBlizzard)
         self.showPower:SetChecked(DB.showPower)
         self.showPets:SetChecked(DB.pets ~= false)
-        self.showReminders:SetChecked(DB.buffReminders ~= false)
+        self.showReminders:SetChecked(DB.buffwatch and true or false)
     end)
     f:Hide()
     return f
@@ -2398,7 +2398,9 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if DB.hideBlizzard == nil then DB.hideBlizzard = true end
         if DB.showPower == nil then DB.showPower = false end
         if DB.pets == nil then DB.pets = true end
-        if DB.buffReminders == nil then DB.buffReminders = true end
+        -- Buffwatch is off until you turn it on (the old setting, on by default, is dropped)
+        DB.buffReminders = nil
+        if DB.buffwatch == nil then DB.buffwatch = false end
     elseif event == "PLAYER_LOGIN" then
         charKey = UnitName("player") .. "-" .. GetRealmName()
         -- give defaults to characters with no bindings, and upgrade ones still
@@ -2588,10 +2590,10 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         end)
         if not okAll then Msg("  couldn't read debuffs: %s", tostring(err)) end
     elseif cmd == "buffs" then
-        DB.buffReminders = not DB.buffReminders
-        if config and config.showReminders then config.showReminders:SetChecked(DB.buffReminders) end
+        DB.buffwatch = not DB.buffwatch
+        if config and config.showReminders then config.showReminders:SetChecked(DB.buffwatch) end
         for _, b in ipairs(buttons) do if b.c then UpdateBuffNeeds(b) end end
-        Msg("Buffwatch %s.", DB.buffReminders and "on" or "off")
+        Msg("Buffwatch %s.", DB.buffwatch and "on" or "off")
     elseif cmd == "pets" then
         DB.pets = not DB.pets
         if config and config.showPets then config.showPets:SetChecked(DB.pets) end
