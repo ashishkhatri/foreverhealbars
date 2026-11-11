@@ -1152,7 +1152,8 @@ local function CreateConfig()
     local top = -78
     for c, label in ipairs(CLICK_LABEL) do
         local h = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        h:SetPoint("TOPLEFT", 90 + (c - 1) * colW, top)
+        -- line up with the text box, not the spell icon beside it
+        h:SetPoint("TOPLEFT", 90 + (c - 1) * colW + 21, top)
         h:SetText(label)
     end
 

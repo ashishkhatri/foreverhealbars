@@ -2,7 +2,7 @@
 ## Title: Forever Heal Bars
 ## Notes: Minimalist grid raid frames for healers: click-casting, HoTs, dispels, incoming heals, range and aggro.
 ## Author: ashishkhatri
-## Version: 0.9.5
+## Version: 0.9.6
 ## X-License: MIT
 ## X-Website: https://github.com/ashishkhatri/foreverhealbars
 ## X-Curse-Project-ID: 1797248
