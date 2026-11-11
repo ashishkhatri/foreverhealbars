@@ -703,6 +703,154 @@ local function FindDispelByFilter(u)
     end
 end
 
+---------------------------------------------------------------------------
+-- Tracked auras. In combat WoW Forever refuses addons the list of a unit's
+-- buffs and debuffs (every index reader errors with "Auras cannot be
+-- accessed when secret"). It still announces each aura as it comes and goes
+-- (UNIT_AURA, by instance ID), so keep our own list of IDs per unit and ask
+-- the game about each one directly.
+---------------------------------------------------------------------------
+local auraBook = {}       -- unit -> { [instanceID] = { harmful = bool|nil, dtype = "Magic"|nil } }
+local DISPEL_FILTERS = { "HARMFUL|RAID_PLAYER_DISPELLABLE", "HARMFUL|RAID" }
+
+local function SeedAuras(u)                -- the full list (out of combat)
+    local list = {}
+    for _, filter in ipairs({ "HARMFUL", "HELPFUL" }) do
+        for i = 1, 40 do
+            local a = C_UnitAuras.GetAuraDataByIndex(u, i, filter)
+            if not a then break end
+            local id = a.auraInstanceID
+            if Readable(id) then
+                list[id] = { harmful = filter == "HARMFUL",
+                    dtype = Readable(a.dispelName) and a.dispelName or nil }
+            end
+        end
+    end
+    auraBook[u] = list
+end
+
+local function SeedAuraIDs(u)              -- newer ID-only reader, if the game has it
+    local f = C_UnitAuras.GetUnitAuraInstanceIDs
+    if not f then return false end
+    local list = {}
+    for _, filter in ipairs({ "HARMFUL", "HELPFUL" }) do
+        local ids = f(u, filter)
+        if type(ids) ~= "table" then return false end
+        for _, id in ipairs(ids) do
+            if Readable(id) then
+                local old = auraBook[u] and auraBook[u][id]
+                list[id] = { harmful = filter == "HARMFUL", dtype = old and old.dtype }
+            end
+        end
+    end
+    auraBook[u] = list
+    return true
+end
+
+local function IsHarmful(u, a, id)
+    local h = a.isHarmful
+    if Readable(h) then return h and true or false end
+    local isOut = C_UnitAuras.IsAuraFilteredOutByInstanceID
+    if isOut then
+        local ok, out = pcall(isOut, u, id, "HARMFUL")
+        if ok and Readable(out) then return not out end
+    end
+    return nil                              -- unknown: checked both ways later
+end
+
+local function NoteAuras(u, info)
+    if type(info) ~= "table" or info.isFullUpdate or not auraBook[u] then
+        if not pcall(SeedAuras, u) and not pcall(SeedAuraIDs, u) then
+            auraBook[u] = auraBook[u] or {}
+        end
+        return
+    end
+    local list = auraBook[u]
+    if info.addedAuras then
+        for _, a in ipairs(info.addedAuras) do
+            local id = a.auraInstanceID
+            if Readable(id) then
+                local okh, h = pcall(IsHarmful, u, a, id)
+                list[id] = { harmful = okh and h or nil,
+                    dtype = Readable(a.dispelName) and a.dispelName or nil }
+                if okh and h == false then list[id].harmful = false end
+            end
+        end
+    end
+    if info.removedAuraInstanceIDs then
+        for _, id in ipairs(info.removedAuraInstanceIDs) do
+            if Readable(id) then list[id] = nil end
+        end
+    end
+end
+
+local function SortedIDs(list)
+    local ids = {}
+    for id in pairs(list) do ids[#ids + 1] = id end
+    table.sort(ids)
+    return ids
+end
+
+-- Route 3: go through the tracked debuffs and ask about each one.
+local function FindDispelByID(u)
+    local list = auraBook[u]
+    if not list then return end
+    local ids = SortedIDs(list)
+    for _, id in ipairs(ids) do                 -- types we already know
+        local e = list[id]
+        if e.harmful ~= false and e.dtype and canDispel[e.dtype] and DEBUFF_COLOR[e.dtype] then
+            local col = DEBUFF_COLOR[e.dtype]
+            return col.r, col.g, col.b, e.dtype
+        end
+    end
+    local isOut = C_UnitAuras.IsAuraFilteredOutByInstanceID
+    if not isOut then return end
+    for _, id in ipairs(ids) do                 -- the rest: ask the game's filter
+        local e = list[id]
+        if e.harmful ~= false and not e.dtype then
+            for _, filter in ipairs(DISPEL_FILTERS) do
+                local ok, out = pcall(isOut, u, id, filter)
+                if ok and Readable(out) then
+                    if not out then
+                        local okc, r, g, b = pcall(DispelColor, u, { auraInstanceID = id })
+                        if okc and r then return r, g, b end
+                        return NEUTRAL_DISPEL[1], NEUTRAL_DISPEL[2], NEUTRAL_DISPEL[3]
+                    end
+                    break
+                end
+            end
+        end
+    end
+end
+
+-- HoT icons from the tracked buffs, for when the list itself is refused.
+local function HotIconsByID(btn)
+    local u, c = btn.unit, btn.c
+    local list = auraBook[u]
+    local isOut = C_UnitAuras.IsAuraFilteredOutByInstanceID
+    local n = 0
+    if list and isOut then
+        for _, id in ipairs(SortedIDs(list)) do
+            if n >= MAX_HOTS then break end
+            if list[id].harmful ~= true then
+                local mine
+                for _, filter in ipairs({ "HELPFUL|PLAYER|RAID_IN_COMBAT", "HELPFUL|PLAYER" }) do
+                    local ok, out = pcall(isOut, u, id, filter)
+                    if ok and Readable(out) then mine = not out; break end
+                end
+                if mine then
+                    local oka, a = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, u, id)
+                    if oka and a and pcall(c.hots[n + 1].SetTexture, c.hots[n + 1], a.icon) then
+                        n = n + 1
+                        c.hots[n]:Show()
+                    end
+                end
+            end
+        end
+    end
+    for k = n + 1, MAX_HOTS do c.hots[k]:Hide() end
+end
+
 local lastDispel = {}                  -- unit -> what UpdateDispel decided (for /fhb debug)
 local function UpdateDispel(btn)
     local u = btn.unit
@@ -711,7 +859,12 @@ local function UpdateDispel(btn)
     -- otherwise the exact type check above is authoritative
     if not (ok and r) and (not ok or hidden or InCombatLockdown()) then
         local ok2, r2, g2, b2 = pcall(FindDispelByFilter, u)
-        if ok2 then r, g, b, kind = r2, g2, b2, nil else r = nil end
+        if ok2 and r2 then
+            r, g, b, kind = r2, g2, b2, nil
+        else                                    -- list refused: use the tracked IDs
+            local ok3, r3, g3, b3, k3 = pcall(FindDispelByID, u)
+            if ok3 and r3 then r, g, b, kind = r3, g3, b3, k3 else r = nil end
+        end
     end
     lastDispel[btn.unit] = r and (Readable(r) and string.format("%s (%.2f %.2f %.2f)", kind or "type hidden", r, g, b)
         or "found one, colour from game")
@@ -721,7 +874,7 @@ local function UpdateDispel(btn)
 end
 
 local function UpdateAurasModern(btn)
-    if not pcall(UpdateHotIcons, btn) then
+    if not pcall(UpdateHotIcons, btn) and not pcall(HotIconsByID, btn) then
         for k = 1, MAX_HOTS do btn.c.hots[k]:Hide() end
     end
     UpdateDispel(btn)
@@ -832,6 +985,9 @@ end
 local function UpdateAuras(btn)
     local u = btn.unit
     if not u or not UnitExists(u) then return end
+    if not InCombatLockdown() and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+        pcall(SeedAuras, u)                     -- keep the tracked list exact while we can
+    end
     UpdateHots(btn)
     local fn = (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) and UpdateAurasModern or UpdateAurasLegacy
     -- if the game hides aura details right now, show nothing rather than erroring
@@ -1657,6 +1813,9 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if list then for _, b in ipairs(list) do HideCastCost(b) end end
         return
     end
+    if event == "UNIT_AURA" and byUnit[arg1] and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+        pcall(NoteAuras, arg1, arg2)
+    end
     local fn = UNIT_EVENTS[event]
     if fn then ForUnit(arg1, fn) return end
 
@@ -1709,6 +1868,10 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         for _, f in ipairs(list) do f() end
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
         Remap()
+        wipe(auraBook)                          -- unit tokens may now be other players
+        if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+            for u in pairs(byUnit) do pcall(NoteAuras, u, nil) end
+        end
         C_Timer.After(0.1, UpdateMover)
         HideBlizzard()
         for _, b in ipairs(buttons) do if b:IsShown() then UpdateAll(b) end end
@@ -1764,7 +1927,10 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         local cures = {}
         for t in pairs(canDispel) do cures[#cures + 1] = t end
         Msg("debuffs on %s  |  you can cure: %s", u, #cures > 0 and table.concat(cures, ", ") or "nothing")
-        local okAll, err = pcall(function()
+        local secretNow = C_Secrets and C_Secrets.ShouldAurasBeSecret
+        Msg("  in combat=%s  auras hidden=%s", tostring(InCombatLockdown()),
+            secretNow and tostring(select(2, pcall(secretNow))) or "?")
+        local okList, listErr = pcall(function()
             for i = 1, 40 do
                 local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HARMFUL")
                 if not a then
@@ -1773,6 +1939,42 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
                 end
                 Msg("  %d. %s  type=%s", i, show(a.name), show(a.dispelName))
             end
+        end)
+        if not okList then Msg("  full debuff list: refused") end
+        -- the tracked-ID route, per frame showing this player
+        local isOut = C_UnitAuras.IsAuraFilteredOutByInstanceID
+        Msg("  ID readers: by ID=%s  filter check=%s  ID list=%s",
+            tostring(C_UnitAuras.GetAuraDataByAuraInstanceID ~= nil), tostring(isOut ~= nil),
+            tostring(C_UnitAuras.GetUnitAuraInstanceIDs ~= nil))
+        if C_UnitAuras.GetUnitAuraInstanceIDs then
+            local okI, ids = pcall(C_UnitAuras.GetUnitAuraInstanceIDs, u, "HARMFUL")
+            Msg("  ID list for debuffs: %s", not okI and ("error: " .. tostring(ids))
+                or (type(ids) == "table" and (#ids .. " found") or show(ids)))
+        end
+        for _, b in ipairs(buttons) do
+            local fu = b.unit
+            if fu and b:IsShown() and ((fu == u) or select(2, pcall(UnitIsUnit, fu, u)) == true) then
+                local list = auraBook[fu] or {}
+                local n = 0
+                for id, e in pairs(list) do
+                    n = n + 1
+                    if e.harmful ~= false and n <= 12 then
+                        local answers = {}
+                        for _, flt in ipairs(DISPEL_FILTERS) do
+                            local okf, out = isOut and pcall(isOut, fu, id, flt)
+                            answers[#answers + 1] = flt:gsub("HARMFUL|", "") .. "="
+                                .. (not isOut and "-" or not okf and "error" or show(out))
+                        end
+                        local oka, a = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, fu, id)
+                        Msg("  tracked %s on %s: harmful=%s type=%s  %s  by ID=%s", tostring(id), fu,
+                            tostring(e.harmful), tostring(e.dtype), table.concat(answers, " "),
+                            not oka and "error" or (a and ("ok, name " .. show(a.name)) or "nil"))
+                    end
+                end
+                Msg("  %s: %d tracked auras", fu, n)
+            end
+        end
+        local okAll, err = pcall(function()
             for _, flt in ipairs({ "HARMFUL|RAID_PLAYER_DISPELLABLE", "HARMFUL|RAID" }) do
                 local okf, r = pcall(C_UnitAuras.GetAuraDataByIndex, u, 1, flt)
                 Msg("  game filter %s: %s", flt, not okf and "not supported"
