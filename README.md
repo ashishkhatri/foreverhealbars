@@ -59,6 +59,8 @@ Each binding casts the highest rank you know. Spells you haven't learned yet sho
 
 Use `/fhb` or `/healbars`.
 
+Every command also has a control in the settings window (`/fhb`): checkboxes for lock, pets, buff reminders and Blizzard frames, a scale slider, and buttons for reset and debug.
+
 | Command | What it does |
 | --- | --- |
 | `/fhb` | Open the click-casting window |

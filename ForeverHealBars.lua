@@ -1971,7 +1971,7 @@ local config
 local function CreateConfig()
     local f = CreateFrame("Frame", "ForeverHealBarsConfig", UIParent, "BasicFrameTemplateWithInset")
     local colW, rowH, SLOT = 84, 46, 36
-    f:SetSize(math.max(560, 90 + colW * #CLICKS + 20), 178 + rowH * #MODS)
+    f:SetSize(math.max(560, 90 + colW * #CLICKS + 20), 210 + rowH * #MODS)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
@@ -2189,6 +2189,9 @@ local function CreateConfig()
     -- every square and light up the one under the mouse
     f.dragging = false
     f:SetScript("OnUpdate", function(self)
+        if self.lock and self.lock:GetChecked() ~= (DB.locked and true or false) then
+            self.lock:SetChecked(DB.locked and true or false)
+        end
         if self.moving then
             local x, y = GetCursorPosition()
             local sc = ghost:GetEffectiveScale()
@@ -2261,6 +2264,75 @@ local function CreateConfig()
     end)
     f.showPets = pets
 
+    -- frames row: lock, scale, reset position, debug (same as the /fhb commands)
+    local lock = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+    lock:SetSize(22, 22)
+    lock:SetPoint("BOTTOMLEFT", pwr, "TOPLEFT", 0, 10)
+    local lockLabel = lock.Text or lock.text or lock:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    lockLabel:ClearAllPoints()
+    lockLabel:SetPoint("LEFT", lock, "RIGHT", 2, 0)
+    lockLabel:SetFontObject("GameFontHighlightSmall")
+    lockLabel:SetText("Lock frames")
+    lock:SetScript("OnClick", function(self) SetLocked(self:GetChecked() and true or false) end)
+    f.lock = lock
+
+    local scaleLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    scaleLabel:SetPoint("LEFT", lockLabel, "RIGHT", 28, 0)
+    scaleLabel:SetText("Scale")
+    local slider = CreateFrame("Slider", nil, f)
+    slider:SetOrientation("HORIZONTAL")
+    slider:SetSize(150, 16)
+    slider:SetPoint("LEFT", scaleLabel, "RIGHT", 10, 0)
+    slider:SetMinMaxValues(MIN_SCALE, MAX_SCALE)
+    slider:SetValueStep(0.05)
+    if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
+    slider:EnableMouse(true)
+    local track = slider:CreateTexture(nil, "BACKGROUND")
+    track:SetPoint("LEFT", 0, 0)
+    track:SetPoint("RIGHT", 0, 0)
+    track:SetHeight(4)
+    track:SetColorTexture(0.25, 0.27, 0.33, 1)
+    local thumb = slider:CreateTexture(nil, "OVERLAY")
+    thumb:SetSize(10, 16)
+    thumb:SetColorTexture(ACCENT_DROP[1], ACCENT_DROP[2], ACCENT_DROP[3], 1)
+    slider:SetThumbTexture(thumb)
+    local scaleValue = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    scaleValue:SetPoint("LEFT", slider, "RIGHT", 8, 0)
+    slider:SetScript("OnValueChanged", function(self, v)
+        v = math.floor(v * 20 + 0.5) / 20
+        scaleValue:SetText(string.format("%.2f", v))
+        if self.syncing or v == DB.scale then return end
+        DB.scale = v
+        if not OutOfCombat(function() ApplyScale(v) end) then Msg("will rescale after combat.") end
+    end)
+    f.scale = slider
+
+    local debugBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    debugBtn:SetSize(110, 22)
+    debugBtn:SetPoint("BOTTOMRIGHT", -14, 90)          -- level with the Lock frames row
+    debugBtn:SetText("Debug target")
+    debugBtn:SetScript("OnClick", function() SlashCmdList.FOREVERHEALBARS("debug") end)
+    debugBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Debug target", 1, 1, 1)
+        GameTooltip:AddLine("Prints what the game reports about your target's buffs and debuffs (or yours) to chat. Same as /fhb debug.", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    debugBtn:SetScript("OnLeave", GameTooltip_Hide)
+
+    local resetFrames = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    resetFrames:SetSize(150, 22)
+    resetFrames:SetPoint("RIGHT", debugBtn, "LEFT", -8, 0)
+    resetFrames:SetText("Reset frame position")
+    resetFrames:SetScript("OnClick", function() SlashCmdList.FOREVERHEALBARS("reset") end)
+    resetFrames:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Reset frame position", 1, 1, 1)
+        GameTooltip:AddLine("Puts the frames back in the default spot, size and scale. Same as /fhb reset.", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    resetFrames:SetScript("OnLeave", GameTooltip_Hide)
+
     local note = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     note:SetPoint("BOTTOMLEFT", 16, 14)
     note:SetText("Red border: not in your spellbook yet. Saved per character.")
@@ -2307,6 +2379,10 @@ local function CreateConfig()
         self.showPower:SetChecked(DB.showPower)
         self.showPets:SetChecked(DB.pets ~= false)
         self.showReminders:SetChecked(DB.buffReminders ~= false)
+        self.lock:SetChecked(DB.locked and true or false)
+        self.scale.syncing = true
+        self.scale:SetValue(DB.scale or 1)
+        self.scale.syncing = false
     end)
     f:Hide()
     return f
@@ -2472,6 +2548,7 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         if not s or s < 0.5 or s > 2 then Msg("scale must be between 0.5 and 2.") return end
         DB.scale = s
         if not OutOfCombat(function() ApplyScale(s) end) then Msg("will rescale after combat.") end
+        if config and config:IsShown() then config:GetScript("OnShow")(config) end
     elseif cmd == "debug" then
         local u = (arg ~= "" and arg) or (UnitExists("target") and "target") or "player"
         local function show(v)
@@ -2583,7 +2660,9 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         if not OutOfCombat(function() PlaceAnchor(); ApplyScale(1); ApplySize(W, H) end) then
             Msg("will reset after combat.")
         end
+        if config and config:IsShown() then config:GetScript("OnShow")(config) end
     else
-        Msg("/fhb  (click-casting)  |  /fhb unlock  |  /fhb lock  |  /fhb scale 0.5-2  |  /fhb blizzard  |  /fhb reset")
+        Msg("/fhb  (settings)  |  unlock  |  lock  |  scale 0.5-2  |  pets  |  buffs  |  blizzard  |  reset  |  debug"
+            .. "  (all of these are also in the settings window)")
     end
 end
