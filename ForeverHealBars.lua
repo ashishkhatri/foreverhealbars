@@ -1543,7 +1543,8 @@ local function CreateConfig()
     help:SetPoint("TOPRIGHT", -16, -32)
     help:SetJustifyH("LEFT")
     help:SetText("Drag a spell from your spellbook onto a square. Right-click a square to clear it; "
-        .. "right-click an empty one to set Target or Menu. After dropping, right-click "
+        .. "right-click an empty one to set Target or Menu. Drag a square onto another to move it. "
+        .. "After dropping from the spellbook, right-click "
         .. "anywhere or press Escape to let go of the spell.")
 
     local top, x0 = -64, 90
@@ -1636,6 +1637,14 @@ local function CreateConfig()
             end
 
             sq:SetScript("OnReceiveDrag", TakeCursorSpell)
+            -- drag a filled square onto another to move it there (the two swap).
+            -- Done entirely inside the window; the game cursor is never touched.
+            sq:RegisterForDrag("LeftButton")
+            sq:SetScript("OnDragStart", function(self)
+                if GetCursorInfo() or not Binds()[self.key] then return end
+                f:StartMove(self)
+            end)
+            sq:SetScript("OnDragStop", function(self) f:EndMove() end)
             sq:SetScript("OnClick", function(self, button)
                 if TakeCursorSpell(self) then return end
                 if button == "RightButton" then
@@ -1648,7 +1657,7 @@ local function CreateConfig()
                 end
             end)
             sq:SetScript("OnEnter", function(self)
-                if GetCursorInfo() == "spell" then self.hl:Show() end
+                if GetCursorInfo() == "spell" or f.moving then self.hl:Show() end
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 local v = Binds()[self.key]
                 local low = v and v:lower()
@@ -1661,12 +1670,12 @@ local function CreateConfig()
                     GameTooltip:AddLine("Drag a spell here. Right-click for Target / Menu.", 0.5, 0.5, 0.5, true)
                 elseif low == "target" or low == "menu" then
                     GameTooltip:AddLine(low == "target" and "Target" or "Menu", 1, 0.82, 0)
-                    GameTooltip:AddLine("Right-click to change.", 0.5, 0.5, 0.5)
+                    GameTooltip:AddLine("Right-click to change. Drag to another square to move.", 0.5, 0.5, 0.5, true)
                 else
                     local name = SpellInfo(v)
                     GameTooltip:AddLine(v, 1, 0.82, 0)
                     if not name then GameTooltip:AddLine("Not in your spellbook yet.", 1, 0.3, 0.3) end
-                    GameTooltip:AddLine("Right-click to clear.", 0.5, 0.5, 0.5)
+                    GameTooltip:AddLine("Right-click to clear. Drag to another square to move.", 0.5, 0.5, 0.5, true)
                 end
                 GameTooltip:Show()
             end)
@@ -1678,17 +1687,67 @@ local function CreateConfig()
         end
     end
 
-    -- while a spell is on the cursor, outline every square and light up the
-    -- one under the mouse
+    -- moving a binding between squares: a copy of the icon follows the mouse
+    local ghost = CreateFrame("Frame", nil, f)
+    ghost:SetSize(SLOT, SLOT)
+    ghost:SetFrameStrata("TOOLTIP")
+    ghost:SetAlpha(0.85)
+    ghost:Hide()
+    ghost.icon = ghost:CreateTexture(nil, "ARTWORK")
+    ghost.icon:SetAllPoints()
+    ghost.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    ghost.label = ghost:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    ghost.label:SetPoint("CENTER")
+    local ghostBg = ghost:CreateTexture(nil, "BACKGROUND")
+    ghostBg:SetAllPoints()
+    ghostBg:SetColorTexture(0.06, 0.07, 0.1, 0.95)
+
+    function f:StartMove(src)
+        self.moving = src
+        ghost.icon:SetShown(src.icon:IsShown())
+        ghost.icon:SetTexture(src.icon:GetTexture())
+        ghost.label:SetText(src.label:GetText() or "")
+        src:SetAlpha(0.4)
+        ghost:Show()
+        GameTooltip_Hide()
+    end
+
+    function f:EndMove()
+        local src = self.moving
+        if not src then return end
+        self.moving = nil
+        ghost:Hide()
+        src:SetAlpha(1)
+        for _, sq in ipairs(self.boxes) do
+            if sq ~= src and sq:IsMouseOver() then
+                local b = Binds()
+                b[src.key], b[sq.key] = b[sq.key], b[src.key]     -- swap
+                src:Refresh()
+                sq:Refresh()
+                if not ApplyBindingsAll() then Msg("bindings will update after combat.") end
+                break
+            end
+        end
+    end
+    f:HookScript("OnHide", function(self) self:EndMove() end)
+
+    -- while a spell is on the cursor (or a square is being moved), outline
+    -- every square and light up the one under the mouse
     f.dragging = false
     f:SetScript("OnUpdate", function(self)
-        local dragging = GetCursorInfo() == "spell"
+        if self.moving then
+            local x, y = GetCursorPosition()
+            local sc = ghost:GetEffectiveScale()
+            ghost:ClearAllPoints()
+            ghost:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x / sc, y / sc)
+        end
+        local dragging = GetCursorInfo() == "spell" or self.moving ~= nil
         if dragging ~= self.dragging then
             self.dragging = dragging
             for _, sq in ipairs(self.boxes) do sq.drop:SetAlpha(dragging and 0.8 or 0) end
         end
         if dragging then
-            for _, sq in ipairs(self.boxes) do sq.hl:SetShown(sq:IsMouseOver()) end
+            for _, sq in ipairs(self.boxes) do sq.hl:SetShown(sq ~= self.moving and sq:IsMouseOver()) end
         end
     end)
 
