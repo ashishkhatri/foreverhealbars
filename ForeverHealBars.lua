@@ -8,6 +8,7 @@ local W, H, GAP = 72, 46, 3          -- button size and spacing
 local MAX_BUTTONS = 40
 local OOR_DIM = 0.65                  -- darkness of the overlay on out-of-range players
 local HOT_SIZE, MAX_HOTS = 11, 3
+local SHEEN_W = 22                    -- width of the incoming-heal shimmer band
 local POWER_H = 3                     -- height of the resource bar
 local BAR = "Interface\\Buttons\\WHITE8X8"
 
@@ -244,6 +245,31 @@ local function Build(btn)
     inc:SetFrameLevel(hp:GetFrameLevel())
     c.inc = inc
 
+    -- Shimmer: a soft light band that sweeps across the incoming-heal fill.
+    -- It lives in a clip frame matching the fill, so it only shows inside it.
+    local clip = CreateFrame("Frame", nil, inc)
+    clip:SetAllPoints(inc:GetStatusBarTexture())
+    clip:SetClipsChildren(true)
+    clip:Hide()
+    local sheen = clip:CreateTexture(nil, "OVERLAY")
+    sheen:SetTexture(string.format("Interface\\AddOns\\%s\\media\\sheen", ADDON))
+    sheen:SetBlendMode("ADD")
+    sheen:SetAlpha(0.55)
+    sheen:SetWidth(SHEEN_W)
+    sheen:SetPoint("TOPRIGHT", clip, "TOPLEFT")
+    sheen:SetPoint("BOTTOMRIGHT", clip, "BOTTOMLEFT")
+    local sweep = sheen:CreateAnimationGroup()
+    sweep:SetLooping("REPEAT")
+    local move = sweep:CreateAnimation("Translation")
+    move:SetOffset(W + SHEEN_W, 0)
+    move:SetDuration(1.1)
+    move:SetSmoothing("IN_OUT")
+    local rest = sweep:CreateAnimation("Translation")   -- short pause between sweeps
+    rest:SetOffset(0, 0)
+    rest:SetDuration(0.5)
+    rest:SetOrder(2)
+    c.shimmer, c.shimmerAnim, c.shimmerMove = clip, sweep, move
+
     local text = CreateFrame("Frame", nil, c)
     text:SetAllPoints()
     text:SetFrameLevel(hp:GetFrameLevel() + 2)
@@ -321,7 +347,16 @@ local function UpdateHealth(btn)
     c.hp:SetMinMaxValues(0, max)
     c.hp:SetValue(UnitHealth(u))
     c.inc:SetMinMaxValues(0, max)
-    c.inc:SetValue(UnitGetIncomingHeals and UnitGetIncomingHeals(u) or 0)
+    local incoming = UnitGetIncomingHeals and UnitGetIncomingHeals(u)
+    c.inc:SetValue(incoming or 0)
+    -- the game returns nothing when no heals are coming
+    if incoming then
+        c.shimmer:Show()
+        if not c.shimmerAnim:IsPlaying() then c.shimmerAnim:Play() end
+    else
+        c.shimmerAnim:Stop()
+        c.shimmer:Hide()
+    end
 
     local status = (not UnitIsConnected(u) and "Offline") or (UnitIsGhost(u) and "Ghost")
         or (UnitIsDead(u) and "Dead") or nil
@@ -763,6 +798,7 @@ local function ApplySize(w, h)
         b:SetSize(w, h)
         b.c.name:SetWidth(w - 6)
         b.c.inc:SetWidth(w)
+        b.c.shimmerMove:SetOffset(w + SHEEN_W, 0)
         -- short frames: name only, centred; tall enough: name above missing health
         b.roomy = h >= 34
         b.c.status:SetShown(b.roomy)
