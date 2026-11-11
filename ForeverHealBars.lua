@@ -10,7 +10,7 @@ local OOR_DIM = 0.65                  -- darkness of the overlay on out-of-range
 local HOT_SIZE, MAX_HOTS = 11, 3
 local INC_EASE = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
 local POWER_H = 3                     -- height of the resource bar
-local SHIELD_H = 4                    -- height of the shield (absorb) bar
+local SHIELD_H = 6                    -- height of the shield (absorb) bar
 local BAR = "Interface\\Buttons\\WHITE8X8"
 
 local DB, charKey
@@ -296,6 +296,15 @@ local function Build(btn)
     shield:SetMinMaxValues(0, 1)
     shield:SetValue(0)
     shield:SetFrameLevel(hp:GetFrameLevel() + 1)
+    -- dashed: a fixed dash pattern across the whole strip masks the fill, so
+    -- the dashes stay put while the shield shrinks
+    if shield.CreateMaskTexture then
+        local mask = shield:CreateMaskTexture()
+        mask:SetTexture(string.format("Interface\\AddOns\\%s\\media\\shield_mask", ADDON),
+            "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetAllPoints(shield)
+        shield:GetStatusBarTexture():AddMaskTexture(mask)
+    end
     c.shield = shield
 
     -- Glow: once a heal is on the way the segment softly pulses until it lands.
