@@ -10,7 +10,7 @@ local OOR_DIM = 0.65                  -- darkness of the overlay on out-of-range
 local HOT_SIZE, MAX_HOTS = 11, 3
 local INC_EASE = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
 local POWER_H = 3                     -- height of the resource bar
-local SHIELD_H = 3                    -- height of the shield (absorb) bar
+local SHIELD_H = 4                    -- height of the shield (absorb) bar
 local BAR = "Interface\\Buttons\\WHITE8X8"
 
 local DB, charKey
@@ -290,8 +290,9 @@ local function Build(btn)
     shield:SetPoint("TOPLEFT")
     shield:SetPoint("TOPRIGHT")
     shield:SetHeight(SHIELD_H)
-    shield:SetStatusBarTexture(BAR)
-    shield:SetStatusBarColor(0.92, 0.96, 1, 0.95)
+    -- white with a dark underline built into the texture, so it stands out on
+    -- light class colours too
+    shield:SetStatusBarTexture(string.format("Interface\\AddOns\\%s\\media\\shield", ADDON))
     shield:SetMinMaxValues(0, 1)
     shield:SetValue(0)
     shield:SetFrameLevel(hp:GetFrameLevel() + 1)
