@@ -1138,7 +1138,9 @@ local function CreateConfig()
 
     local title = f.TitleText or f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     if not f.TitleText then title:SetPoint("TOP", 0, -5) end
-    title:SetText("Forever Heal Bars settings")
+    local GetMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local version = GetMeta and GetMeta(ADDON, "Version")
+    title:SetText("Forever Heal Bars settings" .. (version and ("  |cff808080v" .. version .. "|r") or ""))
 
     local help = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     help:SetPoint("TOPLEFT", 16, -32)
