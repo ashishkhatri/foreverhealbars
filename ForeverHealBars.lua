@@ -462,6 +462,29 @@ end
 
 -- Color for a debuff the player can dispel. Readable dispel type first; if
 -- that's hidden, ask the game to map it to a color for us.
+-- Debuff types this character can remove, from the cure spells they know.
+local CURES = {
+    SHAMAN = { ["Cure Poison"] = { "Poison" }, ["Cure Disease"] = { "Disease" } },
+    PRIEST = { ["Dispel Magic"] = { "Magic" }, ["Cure Disease"] = { "Disease" }, ["Abolish Disease"] = { "Disease" } },
+    DRUID = { ["Remove Curse"] = { "Curse" }, ["Cure Poison"] = { "Poison" }, ["Abolish Poison"] = { "Poison" } },
+    PALADIN = { ["Purify"] = { "Poison", "Disease" }, ["Cleanse"] = { "Magic", "Poison", "Disease" } },
+    MAGE = { ["Remove Lesser Curse"] = { "Curse" } },
+}
+local canDispel = {}
+local function RefreshCures()
+    wipe(canDispel)
+    local _, class = UnitClass("player")
+    for spell, types in pairs(CURES[class] or {}) do
+        if SpellInfo(spell) then
+            for _, t in ipairs(types) do canDispel[t] = true end
+        end
+    end
+end
+
+local function Readable(v)
+    return v ~= nil and not (issecretvalue and issecretvalue(v))
+end
+
 local dispelCurve
 local function DispelColor(u, a)
     local dtype = a.dispelName
@@ -485,7 +508,7 @@ local function DispelColor(u, a)
     return 0.8, 0.8, 0.8
 end
 
-local function UpdateAurasModern(btn)
+local function UpdateHotIcons(btn)
     local u, c = btn.unit, btn.c
     -- your HoTs and shields ("RAID" = the buffs worth showing on raid frames)
     local n = 0
@@ -497,10 +520,42 @@ local function UpdateAurasModern(btn)
         c.hots[n]:Show()
     end
     for k = n + 1, MAX_HOTS do c.hots[k]:Hide() end
+end
 
-    -- "HARMFUL|RAID" = debuffs you can dispel; the first one colors the border
+-- Route 1: read each debuff's type and check it against the cures you know.
+local function FindDispelByType(u)
+    for i = 1, 40 do
+        local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HARMFUL")
+        if not a then return nil end
+        local t = a.dispelName
+        if Readable(t) and canDispel[t] and DEBUFF_COLOR[t] then
+            local col = DEBUFF_COLOR[t]
+            return col.r, col.g, col.b
+        end
+    end
+end
+
+-- Route 2: let the game pick debuffs you can dispel ("HARMFUL|RAID").
+local function FindDispelByFilter(u)
     local a = C_UnitAuras.GetAuraDataByIndex(u, 1, "HARMFUL|RAID")
-    if a then c.dispel:Set(DispelColor(u, a)) else c.dispel:Set(nil) end
+    if a then return DispelColor(u, a) end
+end
+
+local function UpdateDispel(btn)
+    local u = btn.unit
+    local ok, r, g, b = pcall(FindDispelByType, u)
+    if not (ok and r) then
+        local ok2, r2, g2, b2 = pcall(FindDispelByFilter, u)
+        if ok2 then r, g, b = r2, g2, b2 else r = nil end
+    end
+    btn.c.dispel:Set(r, g, b)
+end
+
+local function UpdateAurasModern(btn)
+    if not pcall(UpdateHotIcons, btn) then
+        for k = 1, MAX_HOTS do btn.c.hots[k]:Hide() end
+    end
+    UpdateDispel(btn)
 end
 
 local function UpdateAurasLegacy(btn)
@@ -1254,6 +1309,11 @@ ev:SetScript("OnEvent", function(_, event, arg1)
         ev:RegisterEvent("GROUP_ROSTER_UPDATE")
         ev:RegisterEvent("PLAYER_ENTERING_WORLD")
         ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+        pcall(ev.RegisterEvent, ev, "SPELLS_CHANGED")
+        RefreshCures()
+    elseif event == "SPELLS_CHANGED" then
+        RefreshCures()
+        for _, b in ipairs(buttons) do if b.unit and b:IsShown() then UpdateAuras(b) end end
     elseif event == "PLAYER_REGEN_ENABLED" then
         local list = pending
         pending = {}
@@ -1298,6 +1358,29 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         if not s or s < 0.5 or s > 2 then Msg("scale must be between 0.5 and 2.") return end
         DB.scale = s
         if not OutOfCombat(function() ApplyScale(s) end) then Msg("will rescale after combat.") end
+    elseif cmd == "debug" then
+        local u = (arg ~= "" and arg) or (UnitExists("target") and "target") or "player"
+        local function show(v)
+            if v == nil then return "nil" end
+            if issecretvalue and issecretvalue(v) then return "<hidden>" end
+            return tostring(v)
+        end
+        local cures = {}
+        for t in pairs(canDispel) do cures[#cures + 1] = t end
+        Msg("debuffs on %s  |  you can cure: %s", u, #cures > 0 and table.concat(cures, ", ") or "nothing")
+        local okAll, err = pcall(function()
+            for i = 1, 40 do
+                local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HARMFUL")
+                if not a then
+                    if i == 1 then Msg("  no debuffs found") end
+                    break
+                end
+                Msg("  %d. %s  type=%s", i, show(a.name), show(a.dispelName))
+            end
+            local r = C_UnitAuras.GetAuraDataByIndex(u, 1, "HARMFUL|RAID")
+            Msg("  game's dispellable filter: %s", r and ("found " .. show(r.name)) or "nothing")
+        end)
+        if not okAll then Msg("  couldn't read debuffs: %s", tostring(err)) end
     elseif cmd == "blizzard" then
         SetHideBlizzard(not DB.hideBlizzard)
     elseif cmd == "reset" then
