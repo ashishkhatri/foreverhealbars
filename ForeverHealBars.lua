@@ -22,8 +22,16 @@ local OnMenuClick                     -- defined with the unit buttons
 
 local MODS = { "", "shift-", "ctrl-", "alt-" }
 local MOD_LABEL = { [""] = "Click", ["shift-"] = "Shift", ["ctrl-"] = "Ctrl", ["alt-"] = "Alt" }
-local CLICKS = { 1, 2, 3, 4, 5 }
-local CLICK_LABEL = { "Left", "Right", "Middle", "Mouse 4", "Mouse 5" }
+local CLICKS = { 1, 2, 3, 4, 5, 6, 7 }
+local CLICK_LABEL = { "Left", "Right", "Middle", "Mouse 4", "Mouse 5", "Wheel up", "Wheel down" }
+-- The mouse wheel isn't a click: while the pointer is over a frame, the wheel
+-- is bound to "click" it with these made-up button names instead.
+local WHEEL = { [6] = { key = "MOUSEWHEELUP", button = "wheelup" },
+                [7] = { key = "MOUSEWHEELDOWN", button = "wheeldown" } }
+-- attribute suffix the secure button code uses for each click
+local function ClickSuffix(click)
+    return WHEEL[click] and ("-" .. WHEEL[click].button) or tostring(click)
+end
 
 ---------------------------------------------------------------------------
 -- Helpers
@@ -1072,6 +1080,7 @@ local menuClicks = {}                -- "alt-2" = true etc., opened by OnMenuCli
 local function ApplyBindings(btn)
     local binds = Binds()
     wipe(menuClicks)
+    local wheelKeys = {}
     for _, mod in ipairs(MODS) do
         for _, click in ipairs(CLICKS) do
             local val = binds[mod .. click]
@@ -1096,9 +1105,20 @@ local function ApplyBindings(btn)
                 typ = nil
                 menuClicks[mod .. click] = true
             end
-            btn:SetAttribute(mod .. "type" .. click, typ)
-            btn:SetAttribute(mod .. "spell" .. click, spell)
+            local sfx = ClickSuffix(click)
+            btn:SetAttribute(mod .. "type" .. sfx, typ)
+            btn:SetAttribute(mod .. "spell" .. sfx, spell)
+            -- only bind the wheel where something is set, so it still zooms
+            -- the camera everywhere else
+            if WHEEL[click] and (typ or menuClicks[mod .. click]) then
+                wheelKeys[#wheelKeys + 1] = { mod:upper() .. WHEEL[click].key, WHEEL[click].button }
+            end
         end
+    end
+    for i = 1, 8 do
+        local w = wheelKeys[i]
+        btn:SetAttribute("fhbwheelkey" .. i, w and w[1] or nil)
+        btn:SetAttribute("fhbwheelbtn" .. i, w and w[2] or nil)
     end
 end
 
@@ -1113,7 +1133,8 @@ end
 ---------------------------------------------------------------------------
 local secureHandler = CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
 
-local CLICK_NUM = { LeftButton = 1, RightButton = 2, MiddleButton = 3, Button4 = 4, Button5 = 5 }
+local CLICK_NUM = { LeftButton = 1, RightButton = 2, MiddleButton = 3, Button4 = 4, Button5 = 5,
+    wheelup = 6, wheeldown = 7 }
 local function OpenMenu(unit)
     if not unit or not UnitExists(unit) or not UnitPopup_OpenMenu then return end
     local which
@@ -1150,6 +1171,16 @@ local function InitButton(self, name)
         local u = self:GetAttribute("unit")
         if u then self:SetAttribute("*macrotext*", "/target " .. u) end
     ]])
+    -- mouse wheel: bound to this frame only while the pointer is over it
+    SecureHandlerWrapScript(btn, "OnEnter", secureHandler, [[
+        self:ClearBindings()
+        for i = 1, 8 do
+            local key = self:GetAttribute("fhbwheelkey" .. i)
+            if key then self:SetBindingClick(true, key, self, self:GetAttribute("fhbwheelbtn" .. i)) end
+        end
+    ]])
+    SecureHandlerWrapScript(btn, "OnLeave", secureHandler, [[ self:ClearBindings() ]])
+    SecureHandlerWrapScript(btn, "OnHide", secureHandler, [[ self:ClearBindings() ]])
     btn:HookScript("OnClick", OnMenuClick)
     ApplyBindings(btn)
     btn:HookScript("OnAttributeChanged", function(b, key, value)
