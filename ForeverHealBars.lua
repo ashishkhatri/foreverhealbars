@@ -511,8 +511,8 @@ BuildAuraBoxes = function(btn)
         candidateFilters = { maxDuration = HOT_MAX_SECONDS },
         layout = { elementSpacing = 1 },
     }) then hots:Hide(); hots = nil end
-    -- every debuff on the player, dispellable or not: small icons, bottom right
-    local debuffs = NewAuraBox(c, "BOTTOMRIGHT", Flow and Flow.Left)
+    -- every debuff on the player, dispellable or not: small icons, bottom left
+    local debuffs = NewAuraBox(c, "BOTTOMLEFT", Flow and Flow.Right)
     if debuffs and not pcall(debuffs.AddAuraGroup, debuffs, "debuffs", "HARMFUL", {
         maxFrameCount = MAX_DEBUFF_ICONS,
         templateNames = { "ForeverHealBarsHotTemplate" },
@@ -524,7 +524,7 @@ BuildAuraBoxes = function(btn)
     }) then debuffs:Hide(); debuffs = nil end
     if debuffs then
         debuffs:ClearAllPoints()
-        debuffs:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", -2, 2 + POWER_H)   -- clear of the mana bar
+        debuffs:SetPoint("BOTTOMLEFT", c, "BOTTOMLEFT", 2, 2 + POWER_H)      -- clear of the mana bar
     end
     for _, box in ipairs({ dispel, hots, debuffs }) do
         pcall(box.SetFrameLevel, box, c.hp:GetFrameLevel() + 3)
