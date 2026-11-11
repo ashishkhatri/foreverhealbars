@@ -35,6 +35,7 @@ Blizzard's own party and raid frames are hidden by default (the raid tools tab o
 `/fhb` (or the gear next to the padlock) opens a window with a box for each click: left, right, middle, mouse 4, mouse 5, wheel up and wheel down, plain or with Shift, Ctrl or Alt. Drag a spell from your spellbook (the **Spellbook** button opens it) onto one of the squares: there's one for each click, plain or with Shift, Ctrl or Alt. Drag a square onto another to move it (the two swap). Right-click a square to clear it, or right-click an empty one to set it to Target or Menu. The spell's icon appears next to the box, and the text turns red if the spell isn't in your spellbook.
 
 - Any plain left or right click with nothing bound targets the player or opens their menu.
+- **Click to rez:** a plain left click on a dead player casts your resurrection spell (Resurrection, Redemption, Ancestral Spirit, or Rebirth for druids); on anyone alive it does whatever left click is set to. Works in combat. Untick **Left-click a dead player to resurrect them** in `/fhb` (or `/fhb rez`) to turn it off.
 - **Reset to class defaults** restores the bindings below.
 - You can also type `target` or `menu` in any box.
 - Bindings are saved per character.
@@ -59,7 +60,7 @@ Each binding casts the highest rank you know. Spells you haven't learned yet sho
 
 Use `/fhb` or `/healbars`.
 
-Every command also has a control in the settings window (`/fhb`): checkboxes for lock, pets, buff reminders and Blizzard frames, a scale slider, and buttons for reset and debug.
+Every command also has a control in the settings window (`/fhb`): checkboxes for lock, pets, buff reminders, click to rez and Blizzard frames, a scale slider, and buttons for reset and debug.
 
 | Command | What it does |
 | --- | --- |
@@ -67,6 +68,7 @@ Every command also has a control in the settings window (`/fhb`): checkboxes for
 | `/fhb unlock` | Unlock the frames to drag them (same as the padlock) |
 | `/fhb lock` | Lock them again |
 | `/fhb scale 1.2` | Scale everything, text included (0.5 to 2) |
+| `/fhb rez` | Turn left-click to resurrect on or off |
 | `/fhb buffs` | Turn buff reminders on or off |
 | `/fhb pets` | Show or hide pet frames beside their owners |
 | `/fhb blizzard` | Turn hiding Blizzard's party and raid frames on or off |

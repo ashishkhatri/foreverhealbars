@@ -1438,6 +1438,18 @@ end
 -- menu directly (menus aren't protected).
 local menuClicks = {}                -- "alt-2" = true etc., opened by OnMenuClick
 
+-- Click to rez: a plain left click on a dead player casts your resurrection
+-- spell; on anyone alive it does whatever plain left click is bound to. The
+-- game decides at cast time with a [dead] macro condition, so it works in
+-- combat too.
+local REZ_SPELLS = { PRIEST = "Resurrection", PALADIN = "Redemption", SHAMAN = "Ancestral Spirit", DRUID = "Rebirth" }
+local function RezSpell()
+    if DB and DB.clickRez == false then return nil end
+    local _, class = UnitClass("player")
+    local spell = REZ_SPELLS[class]
+    return spell and SpellInfo(spell) and spell or nil
+end
+
 local function ApplyBindings(btn)
     local binds = Binds()
     wipe(menuClicks)
@@ -1480,6 +1492,17 @@ local function ApplyBindings(btn)
         local w = wheelKeys[i]
         btn:SetAttribute("fhbwheelkey" .. i, w and w[1] or nil)
         btn:SetAttribute("fhbwheelbtn" .. i, w and w[2] or nil)
+    end
+    -- plain left click: a macro filled in at click time (see InitButton)
+    local rez = RezSpell()
+    local leftType, leftSpell = btn:GetAttribute("type1"), btn:GetAttribute("spell1")
+    if rez and (leftType == "spell" or leftType == "target" or leftType == nil) then
+        btn:SetAttribute("fhbrez", rez)
+        btn:SetAttribute("fhbleft", leftType == "spell" and leftSpell or "")
+        btn:SetAttribute("type1", "macro")
+        btn:SetAttribute("spell1", nil)
+    else
+        btn:SetAttribute("fhbrez", nil)
     end
 end
 
@@ -1587,6 +1610,17 @@ SetupUnitButton = function(btn)
     SecureHandlerWrapScript(btn, "OnClick", secureHandler, [[
         local u = self:GetAttribute("unit")
         if u then self:SetAttribute("*macrotext*", "/target " .. u) end
+        local rez = self:GetAttribute("fhbrez")
+        if u and rez and button == "LeftButton" then
+            local left = self:GetAttribute("fhbleft")
+            local text = "/cast [@" .. u .. ",dead] " .. rez
+            if left and left ~= "" then
+                text = text .. "; [@" .. u .. "] " .. left
+            else
+                text = text .. "\n/stopmacro [@" .. u .. ",dead]\n/target " .. u
+            end
+            self:SetAttribute("macrotext1", text)
+        end
     ]])
     -- mouse wheel: bound to this frame only while the pointer is over it
     SecureHandlerWrapScript(btn, "OnEnter", secureHandler, [[
@@ -1971,7 +2005,7 @@ local config
 local function CreateConfig()
     local f = CreateFrame("Frame", "ForeverHealBarsConfig", UIParent, "BasicFrameTemplateWithInset")
     local colW, rowH, SLOT = 84, 46, 36
-    f:SetSize(math.max(560, 90 + colW * #CLICKS + 20), 210 + rowH * #MODS)
+    f:SetSize(math.max(560, 90 + colW * #CLICKS + 20), 234 + rowH * #MODS)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true)
@@ -2276,6 +2310,20 @@ local function CreateConfig()
     lock:SetScript("OnClick", function(self) SetLocked(self:GetChecked() and true or false) end)
     f.lock = lock
 
+    local rezBox = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+    rezBox:SetSize(22, 22)
+    rezBox:SetPoint("BOTTOMLEFT", lock, "TOPLEFT", 0, 2)
+    local rezLabel = rezBox.Text or rezBox.text or rezBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    rezLabel:ClearAllPoints()
+    rezLabel:SetPoint("LEFT", rezBox, "RIGHT", 2, 0)
+    rezLabel:SetFontObject("GameFontHighlightSmall")
+    rezLabel:SetText("Left-click a dead player to resurrect them")
+    rezBox:SetScript("OnClick", function(self)
+        DB.clickRez = self:GetChecked() and true or false
+        if not ApplyBindingsAll() then Msg("will update after combat.") end
+    end)
+    f.clickRez = rezBox
+
     local scaleLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     scaleLabel:SetPoint("LEFT", lockLabel, "RIGHT", 28, 0)
     scaleLabel:SetText("Scale")
@@ -2380,6 +2428,7 @@ local function CreateConfig()
         self.showPets:SetChecked(DB.pets ~= false)
         self.showReminders:SetChecked(DB.buffReminders ~= false)
         self.lock:SetChecked(DB.locked and true or false)
+        self.clickRez:SetChecked(DB.clickRez ~= false)
         self.scale.syncing = true
         self.scale:SetValue(DB.scale or 1)
         self.scale.syncing = false
@@ -2449,6 +2498,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if DB.showPower == nil then DB.showPower = false end
         if DB.pets == nil then DB.pets = true end
         if DB.buffReminders == nil then DB.buffReminders = true end
+        if DB.clickRez == nil then DB.clickRez = true end
     elseif event == "PLAYER_LOGIN" then
         charKey = UnitName("player") .. "-" .. GetRealmName()
         -- give defaults to characters with no bindings, and upgrade ones still
@@ -2643,6 +2693,11 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
             end
         end)
         if not okAll then Msg("  couldn't read debuffs: %s", tostring(err)) end
+    elseif cmd == "rez" then
+        DB.clickRez = not DB.clickRez
+        if config and config.clickRez then config.clickRez:SetChecked(DB.clickRez) end
+        Msg("left-click to resurrect %s.", DB.clickRez and "on" or "off")
+        if not ApplyBindingsAll() then Msg("will update after combat.") end
     elseif cmd == "buffs" then
         DB.buffReminders = not DB.buffReminders
         if config and config.showReminders then config.showReminders:SetChecked(DB.buffReminders) end
@@ -2662,7 +2717,7 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         end
         if config and config:IsShown() then config:GetScript("OnShow")(config) end
     else
-        Msg("/fhb  (settings)  |  unlock  |  lock  |  scale 0.5-2  |  pets  |  buffs  |  blizzard  |  reset  |  debug"
+        Msg("/fhb  (settings)  |  unlock  |  lock  |  scale 0.5-2  |  pets  |  buffs  |  rez  |  blizzard  |  reset  |  debug"
             .. "  (all of these are also in the settings window)")
     end
 end
