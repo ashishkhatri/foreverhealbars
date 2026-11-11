@@ -397,11 +397,13 @@ BuildDispelFx = function(btn)
         if not r then
             pulse:Stop()
             fx:Hide()
+            self.shown = false
             return
         end
         wash:SetVertexColor(r, g, b)
         outline:Set(r, g, b)
         fx:Show()
+        self.shown = true
         if not pulse:IsPlaying() then pulse:Play() end
     end
 end
@@ -701,15 +703,20 @@ local function FindDispelByFilter(u)
     end
 end
 
+local lastDispel = {}                  -- unit -> what UpdateDispel decided (for /fhb debug)
 local function UpdateDispel(btn)
     local u = btn.unit
     local ok, r, g, b, kind, hidden = pcall(FindDispelByType, u)
     -- only ask the game's own filter when debuff details are hidden (combat):
     -- otherwise the exact type check above is authoritative
-    if not (ok and r) and (not ok or hidden) then
+    if not (ok and r) and (not ok or hidden or InCombatLockdown()) then
         local ok2, r2, g2, b2 = pcall(FindDispelByFilter, u)
         if ok2 then r, g, b, kind = r2, g2, b2, nil else r = nil end
     end
+    lastDispel[btn.unit] = r and (Readable(r) and string.format("%s (%.2f %.2f %.2f)", kind or "type hidden", r, g, b)
+        or "found one, colour from game")
+        or (ok and (hidden and "nothing (types hidden, game filter found none)" or "nothing")
+        or "error reading debuffs")
     btn.c.dispel:Set(r, g, b, kind)
 end
 
@@ -870,8 +877,10 @@ end
 local function UpdateShield(btn)
     local u = btn.unit
     if not u or not UnitExists(u) or not UnitGetTotalAbsorbs then return end
-    btn.c.shield:SetMinMaxValues(0, UnitHealthMax(u))
-    btn.c.shield:SetValue(UnitGetTotalAbsorbs(u) or 0)
+    pcall(function()
+        btn.c.shield:SetMinMaxValues(0, UnitHealthMax(u))
+        btn.c.shield:SetValue(UnitGetTotalAbsorbs(u))
+    end)
 end
 
 local function UpdateAll(btn)
@@ -1378,7 +1387,8 @@ local function CreateConfig()
     help:SetPoint("TOPRIGHT", -16, -32)
     help:SetJustifyH("LEFT")
     help:SetText("Drag a spell from your spellbook onto a square. Right-click a square to clear it; "
-        .. "right-click an empty one to set Target or Menu.")
+        .. "right-click an empty one to set Target or Menu. After dropping, right-click "
+        .. "anywhere or press Escape to let go of the spell.")
 
     local top, x0 = -64, 90
     for c, label in ipairs(CLICK_LABEL) do
@@ -1462,10 +1472,9 @@ local function CreateConfig()
                 if not name and C_SpellBook and C_SpellBook.GetSpellBookItemName and a1 then
                     name = C_SpellBook.GetSpellBookItemName(a1, a2)
                 end
-                -- Clearing the cursor makes the game notify other UI (action and
-                -- totem bars) right away; run it securely so those updates don't
-                -- count as this addon's and trip over hidden cooldown values.
-                if securecallfunction then securecallfunction(ClearCursor) else ClearCursor() end
+                -- The cursor is left alone: clearing it from addon code makes the
+                -- action and totem bars update as this addon's work and trip over
+                -- hidden cooldowns. Right-click or Escape lets go of the spell.
                 if name then Assign(self, name) end
                 return true
             end
@@ -1569,11 +1578,22 @@ local function CreateConfig()
         if not ApplyBindingsAll() then Msg("bindings will update after combat.") end
     end)
 
-    local book = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    -- Opening the spellbook from addon code makes it build itself as the
+    -- addon's work, and it then can't show its own cooldowns (taint errors).
+    -- So this is a secure button that clicks the game's own spellbook button,
+    -- exactly as if you had clicked it yourself.
+    local micro = _G.SpellbookMicroButton or _G.PlayerSpellsMicroButton
+    local secure = micro and not InCombatLockdown()
+    local book = CreateFrame("Button", nil, f,
+        secure and "SecureActionButtonTemplate, UIPanelButtonTemplate" or "UIPanelButtonTemplate")
     book:SetSize(110, 22)
     book:SetPoint("RIGHT", reset, "LEFT", -8, 0)
     book:SetText("|TInterface\\Icons\\INV_Misc_Book_09:14:14:0:0:64:64:5:59:5:59|t  Spellbook")
-    book:SetScript("OnClick", function()
+    if secure then
+        book:RegisterForClicks("AnyUp", "AnyDown")
+        book:SetAttribute("type", "click")
+        book:SetAttribute("clickbutton", micro)
+    else book:SetScript("OnClick", function()
         if InCombatLockdown() then Msg("the spellbook can't be opened during combat.") return end
         if ToggleSpellBook then
             ToggleSpellBook(BOOKTYPE_SPELL or "spell")
@@ -1582,7 +1602,7 @@ local function CreateConfig()
         elseif SpellBookFrame then
             ToggleFrame(SpellBookFrame)
         end
-    end)
+    end) end
 
     f:SetScript("OnShow", function(self)
         for _, e in ipairs(self.boxes) do e:Refresh() end
@@ -1753,13 +1773,18 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
                 end
                 Msg("  %d. %s  type=%s", i, show(a.name), show(a.dispelName))
             end
-            local r = C_UnitAuras.GetAuraDataByIndex(u, 1, "HARMFUL|RAID")
-            Msg("  game's dispellable filter: %s", r and ("found " .. show(r.name)) or "nothing")
+            for _, flt in ipairs({ "HARMFUL|RAID_PLAYER_DISPELLABLE", "HARMFUL|RAID" }) do
+                local okf, r = pcall(C_UnitAuras.GetAuraDataByIndex, u, 1, flt)
+                Msg("  game filter %s: %s", flt, not okf and "not supported"
+                    or (r and ("found " .. show(r.name)) or "nothing"))
+            end
             -- what each frame showing this player computed for its HoT segment
             for _, b in ipairs(buttons) do
                 if b.unit and b:IsShown() then
                     local same = (b.unit == u) or select(2, pcall(UnitIsUnit, b.unit, u)) == true
                     if same then
+                        Msg("  dispel glow on %s: %s  (effect shown=%s)", b.unit,
+                            tostring(lastDispel[b.unit]), tostring(b.c.dispel and b.c.dispel.shown))
                         local hot = b.c.hot
                         local okv, v = pcall(hot.GetValue, hot)
                         local okw, w = pcall(function() return hot:GetStatusBarTexture():GetWidth() end)
