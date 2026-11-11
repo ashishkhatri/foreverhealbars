@@ -1505,19 +1505,6 @@ local function ApplyBindings(btn)
     end
 end
 
-local function ApplyPets()
-    return OutOfCombat(function()
-        for _, b in ipairs(buttons) do
-            if b.pet then
-                if PetsOn() then RegisterUnitWatch(b.pet) else UnregisterUnitWatch(b.pet); b.pet:Hide() end
-            end
-        end
-        if header then
-            header:SetAttribute("columnSpacing", ColumnSpacing(DB.w or W))
-        end
-    end)
-end
-
 local function ApplyBindingsAll()
     return OutOfCombat(function()
         for _, b in ipairs(buttons) do ApplyBindings(b) end
@@ -1589,6 +1576,20 @@ local function CreatePetButton(owner)
         pet:SetAttribute("unit", pu)
     ]])
     if PetsOn() then RegisterUnitWatch(pet) end
+end
+
+-- show or hide every pet frame (out of combat)
+local function ApplyPets()
+    return OutOfCombat(function()
+        for _, b in ipairs(buttons) do
+            if b.pet then
+                if PetsOn() then RegisterUnitWatch(b.pet) else UnregisterUnitWatch(b.pet); b.pet:Hide() end
+            end
+        end
+        if header then
+            header:SetAttribute("columnSpacing", ColumnSpacing(DB.w or W))
+        end
+    end)
 end
 
 -- Called by the header (through CallMethod) for each button it creates.
