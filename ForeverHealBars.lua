@@ -68,7 +68,6 @@ local DEBUFF_COLOR = {
 local AGGRO_COLOR = { 1, 0.59, 0 }               -- amber
 local INC_COLOR = { 0.67, 1, 0.47 }              -- bright lime
 local HOT_COLOR = { 0.47, 0.78, 0.82 }           -- pale aqua
-local FX = "Interface\\AddOns\\" .. ADDON .. "\\media\\"
 
 -- Default click-casting per class. Keys: modifier prefix + mouse button
 -- (1 left, 2 right, 3 middle). Healers get their main heals on plain clicks,
@@ -316,203 +315,49 @@ local function Build(btn)
     c.selected:Set(1, 1, 1)
     c.selected:SetAlpha(0)
 
-    BuildDispelFx(btn, text)
+    BuildDispelFx(btn)
     c.aggro = Border(text, 2, 2)      -- outside edge: threat
     c.aggro:Set(AGGRO_COLOR[1], AGGRO_COLOR[2], AGGRO_COLOR[3])
     c.aggro:SetAlpha(0)
 end
 
 ---------------------------------------------------------------------------
--- Dispellable debuff effect: a glow pulsing in from the edges plus a thin
--- outline, both in the debuff type's colour, and a small looping effect per
--- type (poison bubbles, disease spores, curse wisps, magic arcs). The health
--- bar keeps its class colour underneath.
+-- Dispellable debuff effect: the whole frame pulses in the debuff type's
+-- colour (a wash fading in and out about once a second), with a thin
+-- outline in the same colour so it still reads at the faint end.
 ---------------------------------------------------------------------------
-local GLOW_D = 12
-local function Anim(group, kind, order, dur, delay)
-    local a = group:CreateAnimation(kind)
-    a:SetOrder(order or 1)
-    a:SetDuration(dur)
-    if delay then a:SetStartDelay(delay) end
-    return a
-end
-
-local function Particle(parent, tex, w, h)
-    local t = parent:CreateTexture(nil, "ARTWORK")
-    t:SetTexture(FX .. tex)
-    t:SetSize(w, h)
-    t:SetBlendMode("BLEND")
-    return t
-end
-
--- Each type gets a frame of particles; `place` positions them for a size.
-local function BuildTypeFx(fx)
-    local types = {}
-
-    -- Poison: bubbles rising from the bottom and fading
-    local p = CreateFrame("Frame", nil, fx); p:SetAllPoints()
-    p.items = {}
-    for i, x in ipairs({ 0.18, 0.42, 0.66, 0.86 }) do
-        local t = Particle(p, "bubble", 9, 9)
-        t:SetAlpha(0)                          -- hidden until its animation runs
-        local g = t:CreateAnimationGroup(); g:SetLooping("REPEAT")
-        local move = Anim(g, "Translation", 1, 1.7 + i * 0.15, (i - 1) * 0.45)
-        local fade = Anim(g, "Alpha", 1, 1.7 + i * 0.15, (i - 1) * 0.45)
-        fade:SetFromAlpha(0.95); fade:SetToAlpha(0)
-        p.items[i] = { t = t, g = g, move = move, x = x }
-    end
-    function p:Place(w, h)
-        for _, it in ipairs(self.items) do
-            it.t:ClearAllPoints()
-            it.t:SetPoint("BOTTOM", self, "BOTTOMLEFT", w * it.x, -9)
-            it.move:SetOffset(0, h + 12)
-        end
-    end
-    types.Poison = p
-
-    -- Disease: spores drifting sideways and back
-    local d = CreateFrame("Frame", nil, fx); d:SetAllPoints()
-    d.items = {}
-    for i, xy in ipairs({ { 0.12, 0.3 }, { 0.3, 0.72 }, { 0.5, 0.4 }, { 0.68, 0.75 }, { 0.82, 0.25 } }) do
-        local t = Particle(d, "spore", 7, 7)
-        local g = t:CreateAnimationGroup(); g:SetLooping("BOUNCE")
-        local move = Anim(g, "Translation", 1, 2.2 + i * 0.25)
-        move:SetSmoothing("IN_OUT")
-        local fade = Anim(g, "Alpha", 1, 2.2 + i * 0.25)
-        fade:SetFromAlpha(0.85); fade:SetToAlpha(0.3)
-        d.items[i] = { t = t, g = g, move = move, x = xy[1], y = xy[2] }
-    end
-    function d:Place(w, h)
-        for i, it in ipairs(self.items) do
-            it.t:ClearAllPoints()
-            it.t:SetPoint("CENTER", self, "BOTTOMLEFT", w * it.x, h * it.y)
-            it.move:SetOffset(w * 0.12 * ((i % 2 == 0) and -1 or 1), (i % 3 - 1) * 3)
-        end
-    end
-    types.Disease = d
-
-    -- Curse: dark wisps rising slowly
-    local cu = CreateFrame("Frame", nil, fx); cu:SetAllPoints()
-    cu.items = {}
-    for i, x in ipairs({ 0.25, 0.55, 0.8 }) do
-        local t = Particle(cu, "wisp", 26, 12)
-        t:SetAlpha(0)                          -- hidden until its animation runs
-        t:SetVertexColor(0.3, 0.02, 0.4)
-        local g = t:CreateAnimationGroup(); g:SetLooping("REPEAT")
-        local move = Anim(g, "Translation", 1, 2.4, (i - 1) * 0.7)
-        local fade = Anim(g, "Alpha", 1, 2.4, (i - 1) * 0.7)
-        fade:SetFromAlpha(0.8); fade:SetToAlpha(0)
-        cu.items[i] = { t = t, g = g, move = move, x = x, fixedColor = true }
-    end
-    function cu:Place(w, h)
-        for _, it in ipairs(self.items) do
-            it.t:ClearAllPoints()
-            it.t:SetPoint("BOTTOM", self, "BOTTOMLEFT", w * it.x, 0)
-            it.move:SetOffset(0, h * 0.6)
-        end
-    end
-    types.Curse = cu
-
-    -- Magic: an occasional crackling arc
-    local m = CreateFrame("Frame", nil, fx); m:SetAllPoints()
-    m.items = {}
-    for i, spec in ipairs({ { "arc1", 0.08, 0.62, 1.3 }, { "arc2", 0.32, 0.3, 1.9 } }) do
-        local t = Particle(m, spec[1], 60, 14)
-        t:SetBlendMode("ADD")
-        t:SetAlpha(0)
-        local g = t:CreateAnimationGroup(); g:SetLooping("REPEAT")
-        local on = Anim(g, "Alpha", 1, 0.05); on:SetFromAlpha(0); on:SetToAlpha(1)
-        local off = Anim(g, "Alpha", 2, 0.3); off:SetFromAlpha(1); off:SetToAlpha(0)
-        local rest = Anim(g, "Alpha", 3, spec[4]); rest:SetFromAlpha(0); rest:SetToAlpha(0)
-        m.items[i] = { t = t, g = g, x = spec[2], y = spec[3] }
-    end
-    function m:Place(w, h)
-        for _, it in ipairs(self.items) do
-            it.t:ClearAllPoints()
-            it.t:SetSize(w * 0.6, math.max(10, h * 0.28))
-            it.t:SetPoint("LEFT", self, "BOTTOMLEFT", w * it.x, h * it.y)
-        end
-    end
-    types.Magic = m
-
-    for _, f in pairs(types) do f:Hide() end
-    return types
-end
-
-BuildDispelFx = function(btn, textFrame)
+BuildDispelFx = function(btn)
     local c = btn.c
     local fx = CreateFrame("Frame", nil, c)
     fx:SetAllPoints()
     fx:SetFrameLevel(c.hp:GetFrameLevel() + 1)    -- over the bars, under the name
-    fx:SetClipsChildren(true)
     fx:Hide()
 
-    -- pulsing edge glow
-    local glow = CreateFrame("Frame", nil, fx)
-    glow:SetAllPoints()
-    local edges = {}
-    local function Edge(tex, a1, a2, horiz, flip)
-        local t = glow:CreateTexture(nil, "ARTWORK")
-        t:SetTexture(FX .. tex)
-        t:SetBlendMode("ADD")
-        t:SetPoint(a1); t:SetPoint(a2)
-        if horiz then t:SetWidth(GLOW_D) else t:SetHeight(GLOW_D) end
-        if flip == "x" then t:SetTexCoord(1, 0, 0, 1) elseif flip == "y" then t:SetTexCoord(0, 1, 1, 0) end
-        edges[#edges + 1] = t
-    end
-    Edge("glow_h", "TOPLEFT", "BOTTOMLEFT", true)
-    Edge("glow_h", "TOPRIGHT", "BOTTOMRIGHT", true, "x")
-    Edge("glow_v", "TOPLEFT", "TOPRIGHT", false)
-    Edge("glow_v", "BOTTOMLEFT", "BOTTOMRIGHT", false, "y")
-    local pulse = glow:CreateAnimationGroup()
+    local wash = fx:CreateTexture(nil, "ARTWORK")
+    wash:SetAllPoints()
+    wash:SetTexture(BAR)
+    local pulse = wash:CreateAnimationGroup()
     pulse:SetLooping("BOUNCE")
-    local a = Anim(pulse, "Alpha", 1, 0.5)
-    a:SetFromAlpha(1); a:SetToAlpha(0.15); a:SetSmoothing("IN_OUT")
+    local a = pulse:CreateAnimation("Alpha")
+    a:SetFromAlpha(0.65)
+    a:SetToAlpha(0.1)
+    a:SetDuration(0.5)
+    a:SetSmoothing("IN_OUT")
 
     local outline = Border(fx, 0, 1)
-    local types = BuildTypeFx(fx)
-
-    c.fx = { frame = fx, edges = edges, pulse = pulse, outline = outline, types = types }
 
     c.dispel = {}
-    function c.dispel:Set(r, g, b, kind)
-        local f = c.fx
+    function c.dispel:Set(r, g, b)
         if not r then
-            if btn.fxKind ~= nil or f.frame:IsShown() then
-                f.pulse:Stop()
-                for _, tf in pairs(f.types) do
-                    for _, it in ipairs(tf.items) do it.g:Stop() end
-                    tf:Hide()
-                end
-                f.frame:Hide()
-            end
-            btn.fxKind = nil
+            pulse:Stop()
+            fx:Hide()
             return
         end
-        f.frame:Show()
-        for _, e in ipairs(f.edges) do e:SetVertexColor(r, g, b) end
-        f.outline:Set(r, g, b)
-        if not f.pulse:IsPlaying() then f.pulse:Play() end
-        if kind ~= btn.fxKind then
-            for k, tf in pairs(f.types) do
-                for _, it in ipairs(tf.items) do it.g:Stop() end
-                tf:Hide()
-            end
-            local tf = kind and f.types[kind]
-            if tf then
-                tf:Show()
-                for _, it in ipairs(tf.items) do
-                    if not it.fixedColor then it.t:SetVertexColor(r, g, b) end
-                    it.g:Play()
-                end
-            end
-            btn.fxKind = kind
-        end
+        wash:SetVertexColor(r, g, b)
+        outline:Set(r, g, b)
+        fx:Show()
+        if not pulse:IsPlaying() then pulse:Play() end
     end
-end
-
-local function LayoutFx(btn, w, h)
-    for _, tf in pairs(btn.c.fx.types) do tf:Place(w, h) end
 end
 
 -- WoW Forever hands addons health, range and threat as "secret" values:
@@ -1091,7 +936,6 @@ local function ApplySize(w, h)
         b.c.name:SetWidth(w - 6)
         b.c.inc:SetWidth(w)
         b.c.hot:SetWidth(w)
-        LayoutFx(b, w, h)
         -- short frames: name only, centred; tall enough: name above missing health
         b.roomy = h >= 34
         b.c.status:SetShown(b.roomy)

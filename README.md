@@ -7,7 +7,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Grid layout.** Compact squares, five per column, one column per group. Works solo, in a party and in raids up to 40.
 - **Click-casting.** Bind spells to left, right, middle, mouse 4 and mouse 5, with or without Shift, Ctrl or Alt, then click a frame to cast on that player.
 - **Your HoTs.** Small icons in the top-right corner of each frame.
-- **Dispellable debuffs.** When someone has a debuff you can remove, a glow pulses in from the edges of their frame with a thin outline in the debuff's color (blue magic, magenta curse, red disease, teal poison), plus a small effect for the type: rising bubbles for poison, drifting spores for disease, dark wisps for curse, a crackling arc for magic. The health bar keeps its class color.
+- **Dispellable debuffs.** When someone has a debuff you can remove, their whole frame pulses in the debuff's color (blue magic, magenta curse, red disease, teal poison), with a thin outline in the same color.
 - **Incoming heals.** A light green extension on the health bar for heals about to land, that slides out from the health edge when a heal starts, then softly pulses until it lands. HoTs (Renew, Rejuvenation, Regrowth) from anyone add a paler green segment after it, roughly the next 3 seconds of their healing.
 - **Resources (optional).** Tick **Show mana / rage / energy bar** in settings for a thin bar along the bottom of each frame: mana (blue), rage (red) or energy (yellow). Off by default.
 - **Your target.** The frame of whoever you have targeted gets a white outline.
