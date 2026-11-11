@@ -566,10 +566,12 @@ end
 local function UpdateHotIcons(btn)
     local u, c = btn.unit, btn.c
     local n = 0
+    local namesHidden = false
     for i = 1, 40 do
         if n >= MAX_HOTS then break end
         local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL|PLAYER")
         if not a then break end
+        if not Readable(a.name) then namesHidden = true; break end
         local ok, hot = pcall(IsHotAura, a)
         if ok and hot then
             n = n + 1
@@ -577,34 +579,62 @@ local function UpdateHotIcons(btn)
             c.hots[n]:Show()
         end
     end
+    -- In combat the game hides buff names from addons, so let it pick the
+    -- buffs worth showing; the icon itself can still be displayed.
+    if namesHidden then
+        n = 0
+        for _, filter in ipairs({ "HELPFUL|PLAYER|RAID_IN_COMBAT", "HELPFUL|PLAYER|RAID" }) do
+            for i = 1, MAX_HOTS do
+                local ok, a = pcall(C_UnitAuras.GetAuraDataByIndex, u, i, filter)
+                if not ok or not a then break end
+                n = n + 1
+                c.hots[n]:SetTexture(a.icon)
+                c.hots[n]:Show()
+            end
+            if n > 0 then break end
+        end
+    end
     for k = n + 1, MAX_HOTS do c.hots[k]:Hide() end
 end
 
 -- Route 1: read each debuff's type and check it against the cures you know.
+-- Returns r, g, b, type for the first debuff you can cure, or, when the
+-- game hides debuff types (in combat), nil plus `true` for "hidden".
 local function FindDispelByType(u)
+    local hidden = false
     for i = 1, 40 do
         local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HARMFUL")
-        if not a then return nil end
+        if not a then break end
         local t = a.dispelName
-        if Readable(t) and canDispel[t] and DEBUFF_COLOR[t] then
+        if t ~= nil and not Readable(t) then
+            hidden = true
+        elseif Readable(t) and canDispel[t] and DEBUFF_COLOR[t] then
             local col = DEBUFF_COLOR[t]
             return col.r, col.g, col.b, t
         end
     end
+    return nil, nil, nil, nil, hidden
 end
 
 -- Route 2: let the game pick debuffs you can dispel ("HARMFUL|RAID").
+local NEUTRAL_DISPEL = { 0.85, 0.85, 0.85 }    -- type unknown (hidden in combat)
 local function FindDispelByFilter(u)
-    local a = C_UnitAuras.GetAuraDataByIndex(u, 1, "HARMFUL|RAID")
-    if a then return DispelColor(u, a) end
+    for _, filter in ipairs({ "HARMFUL|RAID_PLAYER_DISPELLABLE", "HARMFUL|RAID" }) do
+        local ok, a = pcall(C_UnitAuras.GetAuraDataByIndex, u, 1, filter)
+        if ok and a then
+            local okc, r, g, b = pcall(DispelColor, u, a)
+            if okc and r then return r, g, b end
+            return NEUTRAL_DISPEL[1], NEUTRAL_DISPEL[2], NEUTRAL_DISPEL[3]
+        end
+    end
 end
 
 local function UpdateDispel(btn)
     local u = btn.unit
-    local ok, r, g, b, kind = pcall(FindDispelByType, u)
-    if not (ok and r) then
-        -- the game's filter gives a colour but not always a readable type:
-        -- glow and outline only, no per-type effect
+    local ok, r, g, b, kind, hidden = pcall(FindDispelByType, u)
+    -- only ask the game's own filter when debuff details are hidden (combat):
+    -- otherwise the exact type check above is authoritative
+    if not (ok and r) and (not ok or hidden) then
         local ok2, r2, g2, b2 = pcall(FindDispelByFilter, u)
         if ok2 then r, g, b, kind = r2, g2, b2, nil else r = nil end
     end
