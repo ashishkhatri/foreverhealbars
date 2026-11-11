@@ -245,6 +245,18 @@ local function Build(btn)
     inc:SetFrameLevel(hp:GetFrameLevel())
     c.inc = inc
 
+    -- HoT prediction: starts where the incoming-heal fill ends, paler green.
+    local hot = CreateFrame("StatusBar", nil, c)
+    hot:SetStatusBarTexture(BAR)
+    hot:SetStatusBarColor(0.47, 0.9, 0.55, 0.4)
+    hot:SetPoint("TOPLEFT", inc:GetStatusBarTexture(), "TOPRIGHT")
+    hot:SetPoint("BOTTOMLEFT", inc:GetStatusBarTexture(), "BOTTOMRIGHT")
+    hot:SetWidth(W)
+    hot:SetMinMaxValues(0, 1)
+    hot:SetValue(0)
+    hot:SetFrameLevel(inc:GetFrameLevel())
+    c.hot = hot
+
     -- Shimmer: a soft light band that sweeps across the incoming-heal fill.
     -- It lives in a clip frame matching the fill, so it only shows inside it.
     local clip = CreateFrame("Frame", nil, inc)
@@ -347,6 +359,8 @@ local function UpdateHealth(btn)
     c.hp:SetMinMaxValues(0, max)
     c.hp:SetValue(UnitHealth(u))
     c.inc:SetMinMaxValues(0, max)
+    c.hot:SetMinMaxValues(0, max)
+    c.hot:SetValue(btn.hotAmount or 0)
     local incoming = UnitGetIncomingHeals and UnitGetIncomingHeals(u)
     c.inc:SetValue(incoming or 0)
     -- the game returns nothing when no heals are coming
@@ -514,9 +528,34 @@ local function UpdateAurasLegacy(btn)
     if found then c.dispel:Set(found.r, found.g, found.b) else c.dispel:Set(nil) end
 end
 
+-- HoTs the game's incoming-heal number leaves out. Each active one adds one
+-- tick (the per-tick amount the aura reports), about the next 3 seconds.
+local HOT_SPELLS = { ["Renew"] = true, ["Rejuvenation"] = true, ["Regrowth"] = true }
+local function HotAmount(u)
+    if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return 0 end
+    local sum = 0
+    for i = 1, 40 do
+        local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL")
+        if not a then break end
+        if HOT_SPELLS[a.name] and a.points and a.points[1] then
+            local tick = a.points[1]
+            if tick > 0 then sum = sum + tick end
+        end
+    end
+    return sum
+end
+
+local function UpdateHots(btn)
+    local ok, amount = pcall(HotAmount, btn.unit)
+    -- if the game hides aura details, show no HoT segment rather than erroring
+    btn.hotAmount = ok and amount or 0
+    btn.c.hot:SetValue(btn.hotAmount)
+end
+
 local function UpdateAuras(btn)
     local u = btn.unit
     if not u or not UnitExists(u) then return end
+    UpdateHots(btn)
     local fn = (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) and UpdateAurasModern or UpdateAurasLegacy
     -- if the game hides aura details right now, show nothing rather than erroring
     if not pcall(fn, btn) then
@@ -798,6 +837,7 @@ local function ApplySize(w, h)
         b:SetSize(w, h)
         b.c.name:SetWidth(w - 6)
         b.c.inc:SetWidth(w)
+        b.c.hot:SetWidth(w)
         b.c.shimmerMove:SetOffset(w + SHEEN_W, 0)
         -- short frames: name only, centred; tall enough: name above missing health
         b.roomy = h >= 34
