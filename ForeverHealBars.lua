@@ -57,10 +57,18 @@ end or function(s)
     return name, icon
 end
 
-local DEBUFF_COLOR = DebuffTypeColor or {
-    Magic = { r = .2, g = .6, b = 1 }, Curse = { r = .6, g = 0, b = 1 },
-    Disease = { r = .6, g = .4, b = 0 }, Poison = { r = 0, g = .6, b = 0 },
+-- Indicator colours, chosen to stay clearly apart from each other (and from
+-- class colours as far as possible).
+local DEBUFF_COLOR = {
+    Magic = { r = 0.16, g = 0.27, b = 1 },      -- deep royal blue
+    Curse = { r = 0.88, g = 0.12, b = 0.82 },   -- magenta
+    Disease = { r = 0.92, g = 0.12, b = 0.12 }, -- red
+    Poison = { r = 0, g = 0.78, b = 0.59 },     -- teal green
 }
+local AGGRO_COLOR = { 1, 0.59, 0 }               -- amber
+local INC_COLOR = { 0.67, 1, 0.47 }              -- bright lime
+local HOT_COLOR = { 0.47, 0.78, 0.82 }           -- pale aqua
+local FX = "Interface\\AddOns\\" .. ADDON .. "\\media\\"
 
 -- Default click-casting per class. Keys: modifier prefix + mouse button
 -- (1 left, 2 right, 3 middle). Healers get their main heals on plain clicks,
@@ -165,6 +173,8 @@ local function Border(parent, inset, size, layer)
     return b
 end
 
+local BuildDispelFx                   -- defined with the dispel effect below
+
 local function Build(btn)
     -- everything visual lives on a plain child frame, so fading it for range
     -- never touches the secure button
@@ -177,11 +187,6 @@ local function Build(btn)
     bg:SetAllPoints()
     bg:SetColorTexture(0.12, 0.13, 0.17, 0.9)
 
-    -- tints the empty part of the frame while a dispellable debuff is up
-    local tint = c:CreateTexture(nil, "BACKGROUND", nil, 1)
-    tint:SetAllPoints()
-    tint:Hide()
-    c.tint = tint
 
     -- resource bar: a thin strip along the bottom
     local pw = CreateFrame("StatusBar", nil, c)
@@ -236,7 +241,7 @@ local function Build(btn)
     c:SetClipsChildren(true)
     local inc = CreateFrame("StatusBar", nil, c)
     inc:SetStatusBarTexture(BAR)
-    inc:SetStatusBarColor(0.47, 0.9, 0.55, 0.85)
+    inc:SetStatusBarColor(INC_COLOR[1], INC_COLOR[2], INC_COLOR[3], 0.85)
     inc:SetPoint("TOPLEFT", hp:GetStatusBarTexture(), "TOPRIGHT")
     inc:SetPoint("BOTTOMLEFT", hp:GetStatusBarTexture(), "BOTTOMRIGHT")
     inc:SetWidth(W)
@@ -248,7 +253,7 @@ local function Build(btn)
     -- HoT prediction: starts where the incoming-heal fill ends, paler green.
     local hot = CreateFrame("StatusBar", nil, c)
     hot:SetStatusBarTexture(BAR)
-    hot:SetStatusBarColor(0.47, 0.9, 0.55, 0.4)
+    hot:SetStatusBarColor(HOT_COLOR[1], HOT_COLOR[2], HOT_COLOR[3], 0.55)
     hot:SetPoint("TOPLEFT", inc:GetStatusBarTexture(), "TOPRIGHT")
     hot:SetPoint("BOTTOMLEFT", inc:GetStatusBarTexture(), "BOTTOMRIGHT")
     hot:SetWidth(W)
@@ -292,7 +297,6 @@ local function Build(btn)
         c.hots[i] = t
     end
 
-    -- dispellable debuff: the whole frame takes the debuff type's color
     -- out-of-range dimming: a dark layer on top, so nothing underneath shows
     -- through the way it would if the whole frame went translucent
     local dimF = CreateFrame("Frame", nil, c)
@@ -312,25 +316,203 @@ local function Build(btn)
     c.selected:Set(1, 1, 1)
     c.selected:SetAlpha(0)
 
-    c.dispel = {}
-    function c.dispel:Set(r, g, b)
-        if r then
-            btn.dispelled = true
-            c.hp:SetStatusBarColor(r, g, b)
-            c.dmg:SetStatusBarColor(r, g, b)
-            c.tint:SetColorTexture(r, g, b, 0.45)
-            c.tint:Show()
-        else
-            btn.dispelled = false
-            local col = btn.classColor
-            c.hp:SetStatusBarColor(col[1], col[2], col[3])
-            c.dmg:SetStatusBarColor(col[1], col[2], col[3])
-            c.tint:Hide()
+    BuildDispelFx(btn, text)
+    c.aggro = Border(text, 2, 2)      -- outside edge: threat
+    c.aggro:Set(AGGRO_COLOR[1], AGGRO_COLOR[2], AGGRO_COLOR[3])
+    c.aggro:SetAlpha(0)
+end
+
+---------------------------------------------------------------------------
+-- Dispellable debuff effect: a glow pulsing in from the edges plus a thin
+-- outline, both in the debuff type's colour, and a small looping effect per
+-- type (poison bubbles, disease spores, curse wisps, magic arcs). The health
+-- bar keeps its class colour underneath.
+---------------------------------------------------------------------------
+local GLOW_D = 12
+local function Anim(group, kind, order, dur, delay)
+    local a = group:CreateAnimation(kind)
+    a:SetOrder(order or 1)
+    a:SetDuration(dur)
+    if delay then a:SetStartDelay(delay) end
+    return a
+end
+
+local function Particle(parent, tex, w, h)
+    local t = parent:CreateTexture(nil, "ARTWORK")
+    t:SetTexture(FX .. tex)
+    t:SetSize(w, h)
+    t:SetBlendMode("BLEND")
+    return t
+end
+
+-- Each type gets a frame of particles; `place` positions them for a size.
+local function BuildTypeFx(fx)
+    local types = {}
+
+    -- Poison: bubbles rising from the bottom and fading
+    local p = CreateFrame("Frame", nil, fx); p:SetAllPoints()
+    p.items = {}
+    for i, x in ipairs({ 0.18, 0.42, 0.66, 0.86 }) do
+        local t = Particle(p, "bubble", 9, 9)
+        t:SetAlpha(0)                          -- hidden until its animation runs
+        local g = t:CreateAnimationGroup(); g:SetLooping("REPEAT")
+        local move = Anim(g, "Translation", 1, 1.7 + i * 0.15, (i - 1) * 0.45)
+        local fade = Anim(g, "Alpha", 1, 1.7 + i * 0.15, (i - 1) * 0.45)
+        fade:SetFromAlpha(0.95); fade:SetToAlpha(0)
+        p.items[i] = { t = t, g = g, move = move, x = x }
+    end
+    function p:Place(w, h)
+        for _, it in ipairs(self.items) do
+            it.t:ClearAllPoints()
+            it.t:SetPoint("BOTTOM", self, "BOTTOMLEFT", w * it.x, -9)
+            it.move:SetOffset(0, h + 12)
         end
     end
-    c.aggro = Border(text, 2, 2)      -- outside edge: threat
-    c.aggro:Set(0.9, 0.15, 0.15)
-    c.aggro:SetAlpha(0)
+    types.Poison = p
+
+    -- Disease: spores drifting sideways and back
+    local d = CreateFrame("Frame", nil, fx); d:SetAllPoints()
+    d.items = {}
+    for i, xy in ipairs({ { 0.12, 0.3 }, { 0.3, 0.72 }, { 0.5, 0.4 }, { 0.68, 0.75 }, { 0.82, 0.25 } }) do
+        local t = Particle(d, "spore", 7, 7)
+        local g = t:CreateAnimationGroup(); g:SetLooping("BOUNCE")
+        local move = Anim(g, "Translation", 1, 2.2 + i * 0.25)
+        move:SetSmoothing("IN_OUT")
+        local fade = Anim(g, "Alpha", 1, 2.2 + i * 0.25)
+        fade:SetFromAlpha(0.85); fade:SetToAlpha(0.3)
+        d.items[i] = { t = t, g = g, move = move, x = xy[1], y = xy[2] }
+    end
+    function d:Place(w, h)
+        for i, it in ipairs(self.items) do
+            it.t:ClearAllPoints()
+            it.t:SetPoint("CENTER", self, "BOTTOMLEFT", w * it.x, h * it.y)
+            it.move:SetOffset(w * 0.12 * ((i % 2 == 0) and -1 or 1), (i % 3 - 1) * 3)
+        end
+    end
+    types.Disease = d
+
+    -- Curse: dark wisps rising slowly
+    local cu = CreateFrame("Frame", nil, fx); cu:SetAllPoints()
+    cu.items = {}
+    for i, x in ipairs({ 0.25, 0.55, 0.8 }) do
+        local t = Particle(cu, "wisp", 26, 12)
+        t:SetAlpha(0)                          -- hidden until its animation runs
+        t:SetVertexColor(0.3, 0.02, 0.4)
+        local g = t:CreateAnimationGroup(); g:SetLooping("REPEAT")
+        local move = Anim(g, "Translation", 1, 2.4, (i - 1) * 0.7)
+        local fade = Anim(g, "Alpha", 1, 2.4, (i - 1) * 0.7)
+        fade:SetFromAlpha(0.8); fade:SetToAlpha(0)
+        cu.items[i] = { t = t, g = g, move = move, x = x, fixedColor = true }
+    end
+    function cu:Place(w, h)
+        for _, it in ipairs(self.items) do
+            it.t:ClearAllPoints()
+            it.t:SetPoint("BOTTOM", self, "BOTTOMLEFT", w * it.x, 0)
+            it.move:SetOffset(0, h * 0.6)
+        end
+    end
+    types.Curse = cu
+
+    -- Magic: an occasional crackling arc
+    local m = CreateFrame("Frame", nil, fx); m:SetAllPoints()
+    m.items = {}
+    for i, spec in ipairs({ { "arc1", 0.08, 0.62, 1.3 }, { "arc2", 0.32, 0.3, 1.9 } }) do
+        local t = Particle(m, spec[1], 60, 14)
+        t:SetBlendMode("ADD")
+        t:SetAlpha(0)
+        local g = t:CreateAnimationGroup(); g:SetLooping("REPEAT")
+        local on = Anim(g, "Alpha", 1, 0.05); on:SetFromAlpha(0); on:SetToAlpha(1)
+        local off = Anim(g, "Alpha", 2, 0.3); off:SetFromAlpha(1); off:SetToAlpha(0)
+        local rest = Anim(g, "Alpha", 3, spec[4]); rest:SetFromAlpha(0); rest:SetToAlpha(0)
+        m.items[i] = { t = t, g = g, x = spec[2], y = spec[3] }
+    end
+    function m:Place(w, h)
+        for _, it in ipairs(self.items) do
+            it.t:ClearAllPoints()
+            it.t:SetSize(w * 0.6, math.max(10, h * 0.28))
+            it.t:SetPoint("LEFT", self, "BOTTOMLEFT", w * it.x, h * it.y)
+        end
+    end
+    types.Magic = m
+
+    for _, f in pairs(types) do f:Hide() end
+    return types
+end
+
+BuildDispelFx = function(btn, textFrame)
+    local c = btn.c
+    local fx = CreateFrame("Frame", nil, c)
+    fx:SetAllPoints()
+    fx:SetFrameLevel(c.hp:GetFrameLevel() + 1)    -- over the bars, under the name
+    fx:SetClipsChildren(true)
+    fx:Hide()
+
+    -- pulsing edge glow
+    local glow = CreateFrame("Frame", nil, fx)
+    glow:SetAllPoints()
+    local edges = {}
+    local function Edge(tex, a1, a2, horiz, flip)
+        local t = glow:CreateTexture(nil, "ARTWORK")
+        t:SetTexture(FX .. tex)
+        t:SetBlendMode("ADD")
+        t:SetPoint(a1); t:SetPoint(a2)
+        if horiz then t:SetWidth(GLOW_D) else t:SetHeight(GLOW_D) end
+        if flip == "x" then t:SetTexCoord(1, 0, 0, 1) elseif flip == "y" then t:SetTexCoord(0, 1, 1, 0) end
+        edges[#edges + 1] = t
+    end
+    Edge("glow_h", "TOPLEFT", "BOTTOMLEFT", true)
+    Edge("glow_h", "TOPRIGHT", "BOTTOMRIGHT", true, "x")
+    Edge("glow_v", "TOPLEFT", "TOPRIGHT", false)
+    Edge("glow_v", "BOTTOMLEFT", "BOTTOMRIGHT", false, "y")
+    local pulse = glow:CreateAnimationGroup()
+    pulse:SetLooping("BOUNCE")
+    local a = Anim(pulse, "Alpha", 1, 0.5)
+    a:SetFromAlpha(1); a:SetToAlpha(0.15); a:SetSmoothing("IN_OUT")
+
+    local outline = Border(fx, 0, 1)
+    local types = BuildTypeFx(fx)
+
+    c.fx = { frame = fx, edges = edges, pulse = pulse, outline = outline, types = types }
+
+    c.dispel = {}
+    function c.dispel:Set(r, g, b, kind)
+        local f = c.fx
+        if not r then
+            if btn.fxKind ~= nil or f.frame:IsShown() then
+                f.pulse:Stop()
+                for _, tf in pairs(f.types) do
+                    for _, it in ipairs(tf.items) do it.g:Stop() end
+                    tf:Hide()
+                end
+                f.frame:Hide()
+            end
+            btn.fxKind = nil
+            return
+        end
+        f.frame:Show()
+        for _, e in ipairs(f.edges) do e:SetVertexColor(r, g, b) end
+        f.outline:Set(r, g, b)
+        if not f.pulse:IsPlaying() then f.pulse:Play() end
+        if kind ~= btn.fxKind then
+            for k, tf in pairs(f.types) do
+                for _, it in ipairs(tf.items) do it.g:Stop() end
+                tf:Hide()
+            end
+            local tf = kind and f.types[kind]
+            if tf then
+                tf:Show()
+                for _, it in ipairs(tf.items) do
+                    if not it.fixedColor then it.t:SetVertexColor(r, g, b) end
+                    it.g:Play()
+                end
+            end
+            btn.fxKind = kind
+        end
+    end
+end
+
+local function LayoutFx(btn, w, h)
+    for _, tf in pairs(btn.c.fx.types) do tf:Place(w, h) end
 end
 
 -- WoW Forever hands addons health, range and threat as "secret" values:
@@ -414,7 +596,7 @@ end
 -- Mana, rage, energy (and friends). The type is readable; the amounts can be
 -- secret, so they go straight to the bar.
 local POWER_COLOR = {
-    MANA = { 0.25, 0.5, 1 }, RAGE = { 0.9, 0.15, 0.15 }, ENERGY = { 1, 0.85, 0.2 },
+    MANA = { 0.43, 0.59, 1 }, RAGE = { 0.59, 0.08, 0.08 }, ENERGY = { 0.9, 0.78, 0.16 },
     FOCUS = { 1, 0.5, 0.25 }, RUNIC_POWER = { 0, 0.82, 1 },
 }
 local function ApplyPowerShown(btn)
@@ -451,11 +633,9 @@ local function UpdateIdentity(btn)
     else
         btn.classColor = { 0.3, 0.8, 0.3 }
     end
-    if not btn.dispelled then
-        local cc = btn.classColor
-        c.hp:SetStatusBarColor(cc[1], cc[2], cc[3])
-        c.dmg:SetStatusBarColor(cc[1], cc[2], cc[3])
-    end
+    local cc = btn.classColor
+    c.hp:SetStatusBarColor(cc[1], cc[2], cc[3])
+    c.dmg:SetStatusBarColor(cc[1], cc[2], cc[3])
 end
 
 -- Color for a debuff the player can dispel. Readable dispel type first; if
@@ -496,10 +676,10 @@ local function DispelColor(u, a)
             dispelCurve:SetType(Enum.LuaCurveType.Step)
             -- dispel type IDs: 1 Magic, 2 Curse, 3 Disease, 4 Poison
             dispelCurve:AddPoint(0, CreateColor(0.8, 0.8, 0.8, 1))
-            dispelCurve:AddPoint(1, CreateColor(0.2, 0.6, 1, 1))
-            dispelCurve:AddPoint(2, CreateColor(0.6, 0, 1, 1))
-            dispelCurve:AddPoint(3, CreateColor(0.6, 0.4, 0, 1))
-            dispelCurve:AddPoint(4, CreateColor(0, 0.6, 0, 1))
+            for id, t in ipairs({ "Magic", "Curse", "Disease", "Poison" }) do
+                local col = DEBUFF_COLOR[t]
+                dispelCurve:AddPoint(id, CreateColor(col.r, col.g, col.b, 1))
+            end
         end
         return C_UnitAuras.GetAuraDispelTypeColor(u, a.auraInstanceID, dispelCurve):GetRGB()
     end
@@ -528,7 +708,7 @@ local function FindDispelByType(u)
         local t = a.dispelName
         if Readable(t) and canDispel[t] and DEBUFF_COLOR[t] then
             local col = DEBUFF_COLOR[t]
-            return col.r, col.g, col.b
+            return col.r, col.g, col.b, t
         end
     end
 end
@@ -541,12 +721,14 @@ end
 
 local function UpdateDispel(btn)
     local u = btn.unit
-    local ok, r, g, b = pcall(FindDispelByType, u)
+    local ok, r, g, b, kind = pcall(FindDispelByType, u)
     if not (ok and r) then
+        -- the game's filter gives a colour but not always a readable type:
+        -- glow and outline only, no per-type effect
         local ok2, r2, g2, b2 = pcall(FindDispelByFilter, u)
-        if ok2 then r, g, b = r2, g2, b2 else r = nil end
+        if ok2 then r, g, b, kind = r2, g2, b2, nil else r = nil end
     end
-    btn.c.dispel:Set(r, g, b)
+    btn.c.dispel:Set(r, g, b, kind)
 end
 
 local function UpdateAurasModern(btn)
@@ -575,10 +757,15 @@ local function UpdateAurasLegacy(btn)
     while true do
         local name, _, dtype = AuraAt(u, i, "HARMFUL|RAID")
         if not name then break end
-        if dtype and DEBUFF_COLOR[dtype] then found = DEBUFF_COLOR[dtype]; break end
+        if dtype and DEBUFF_COLOR[dtype] then found = dtype; break end
         i = i + 1
     end
-    if found then c.dispel:Set(found.r, found.g, found.b) else c.dispel:Set(nil) end
+    if found then
+        local col = DEBUFF_COLOR[found]
+        c.dispel:Set(col.r, col.g, col.b, found)
+    else
+        c.dispel:Set(nil)
+    end
 end
 
 -- HoTs the game's incoming-heal number leaves out. Each active one adds one
@@ -904,6 +1091,7 @@ local function ApplySize(w, h)
         b.c.name:SetWidth(w - 6)
         b.c.inc:SetWidth(w)
         b.c.hot:SetWidth(w)
+        LayoutFx(b, w, h)
         -- short frames: name only, centred; tall enough: name above missing health
         b.roomy = h >= 34
         b.c.status:SetShown(b.roomy)
