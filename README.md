@@ -13,6 +13,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Resources (optional).** Tick **Show mana / rage / energy bar** in settings for a thin bar along the bottom of each frame: mana (blue), rage (red) or energy (yellow). Off by default. While a player is casting, the mana that cast will cost shows as a lighter section at the end of their bar.
 - **Shields.** A thin white bar along the top of a frame shows how much absorb a shield (like Power Word: Shield) has left. It works in combat.
 - **Pets.** Each player's pet gets a narrower frame right beside its owner's, in a darker shade of the owner's class color, with the same click-casting. Untick **Show pets beside their owners** in `/fhb` (or type `/fhb pets`) to hide them.
+- **Roles.** A small tank, healer or damage icon in the top-left corner of each frame, from the group's role assignment (or the raid's main tank mark).
 - **Your target.** The frame of whoever you have targeted gets a white outline.
 - **Range and aggro.** Out-of-range players are dimmed, and players with aggro get a red outline (faint for high threat).
 - **Lock button.** A small padlock above the top-left corner unlocks the frames. While unlocked, drag anywhere on them to move them, and drag the bottom-right corner to resize: right for wider frames, down for taller ones. Click the padlock again to lock.

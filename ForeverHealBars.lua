@@ -8,6 +8,7 @@ local W, H, GAP = 72, 46, 3          -- button size and spacing
 local MAX_BUTTONS = 40
 local OOR_DIM = 0.65                  -- darkness of the overlay on out-of-range players
 local HOT_SIZE, MAX_HOTS = 11, 3
+local ROLE_SIZE = 11
 local INC_EASE = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
 local POWER_H = 3                     -- height of the resource bar
 local SHIELD_H = 6                    -- height of the shield (absorb) bar
@@ -340,6 +341,13 @@ local function Build(btn)
     status:SetPoint("CENTER", 0, -8)
     status:SetTextColor(0.85, 0.85, 0.85)
     c.status = status
+
+    -- role: a small tank / healer / damage icon in the top-left corner
+    local role = text:CreateTexture(nil, "OVERLAY")
+    role:SetSize(ROLE_SIZE, ROLE_SIZE)
+    role:SetPoint("TOPLEFT", 2, -2)
+    role:Hide()
+    c.role = role
 
     c.hots = {}
     for i = 1, MAX_HOTS do
@@ -692,6 +700,35 @@ local function HideCastCost(btn)
     btn.c.powerCost:Hide()
 end
 
+-- Role from the group's role assignment, or the raid's main tank mark.
+local ROLE_ATLAS = { TANK = "roleicon-tiny-tank", HEALER = "roleicon-tiny-healer", DAMAGER = "roleicon-tiny-dps" }
+local function UnitRole(u)
+    local role
+    if UnitGroupRolesAssigned then
+        local ok, r = pcall(UnitGroupRolesAssigned, u)
+        if ok and Readable(r) and ROLE_ATLAS[r] then role = r end
+    end
+    if not role and GetPartyAssignment then
+        local ok, mt = pcall(GetPartyAssignment, "MAINTANK", u)
+        if ok and mt == true then role = "TANK" end
+    end
+    return role
+end
+
+local function UpdateRole(btn)
+    local u, icon = btn.unit, btn.c.role
+    local role = (not btn.isPet and u and UnitExists(u)) and UnitRole(u) or nil
+    if not role then icon:Hide() return end
+    -- the game's small role icons; the older round role art as a fallback
+    if not (icon.SetAtlas and pcall(icon.SetAtlas, icon, ROLE_ATLAS[role]) and icon:GetAtlas()) then
+        icon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES")
+        if GetTexCoordsForRoleSmallCircle then
+            icon:SetTexCoord(GetTexCoordsForRoleSmallCircle(role))
+        end
+    end
+    icon:Show()
+end
+
 local function UpdateIdentity(btn)
     local u, c = btn.unit, btn.c
     if not u or not UnitExists(u) then return end
@@ -709,6 +746,7 @@ local function UpdateIdentity(btn)
         btn.classColor = { 0.3, 0.8, 0.3 }
     end
     local cc = btn.classColor
+    UpdateRole(btn)
     c.hp:SetStatusBarColor(cc[1], cc[2], cc[3])
     c.dmg:SetStatusBarColor(cc[1], cc[2], cc[3])
 end
@@ -2228,10 +2266,13 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         for e in pairs(CAST_END) do pcall(ev.RegisterEvent, ev, e) end
         ev:RegisterEvent("GROUP_ROSTER_UPDATE")
         ev:RegisterEvent("PLAYER_TARGET_CHANGED")
+        pcall(ev.RegisterEvent, ev, "PLAYER_ROLES_ASSIGNED")
         ev:RegisterEvent("PLAYER_ENTERING_WORLD")
         ev:RegisterEvent("PLAYER_REGEN_ENABLED")
         pcall(ev.RegisterEvent, ev, "SPELLS_CHANGED")
         RefreshCures()
+    elseif event == "PLAYER_ROLES_ASSIGNED" then
+        for _, b in ipairs(buttons) do if b.unit and b:IsShown() then UpdateRole(b) end end
     elseif event == "PLAYER_TARGET_CHANGED" then
         for _, b in ipairs(buttons) do if b.unit and b:IsShown() then UpdateSelected(b) end end
     elseif event == "SPELLS_CHANGED" then
