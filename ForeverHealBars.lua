@@ -79,7 +79,7 @@ local DEBUFF_COLOR = {
     Disease = { r = 0.92, g = 0.12, b = 0.12 }, -- red
     Poison = { r = 0, g = 0.78, b = 0.59 },     -- teal green
 }
-local AGGRO_COLOR = { 1, 0.59, 0 }               -- amber
+local AGGRO_COLOR = { 1, 0.08, 0.08 }   -- red outline: has aggro
 local INC_COLOR = { 0.67, 1, 0.47 }              -- bright lime
 
 -- Default click-casting per class. Keys: modifier prefix + mouse button
@@ -433,6 +433,7 @@ end
 local Flow = AnchorUtil and AnchorUtil.FlowDirection
 local DISPEL_TINT = Enum.CustomAuraButtonDispelTypeTextureStyle
 local HOT_MAX_SECONDS = 30            -- only short buffs (HoTs, shields) get an icon
+local MAX_DEBUFF_ICONS = 4
 
 local function NewAuraBox(c, point, hDir)
     local ok, box = pcall(CreateFrame, "AuraContainer", nil, c, "CustomAuraContainerTemplate")
@@ -502,16 +503,31 @@ BuildAuraBoxes = function(btn)
         candidateFilters = { maxDuration = HOT_MAX_SECONDS },
         layout = { elementSpacing = 1 },
     }) then hots:Hide(); hots = nil end
-    for _, box in ipairs({ dispel, hots }) do
+    -- every debuff on the player, dispellable or not: small icons, bottom right
+    local debuffs = NewAuraBox(c, "BOTTOMRIGHT", Flow and Flow.Left)
+    if debuffs and not pcall(debuffs.AddAuraGroup, debuffs, "debuffs", "HARMFUL", {
+        maxFrameCount = MAX_DEBUFF_ICONS,
+        templateNames = { "ForeverHealBarsHotTemplate" },
+        initializeFrame = function(b)
+            pcall(b.SetIcon, b, b.Icon)
+            b:EnableMouse(false)
+        end,
+        layout = { elementSpacing = 1 },
+    }) then debuffs:Hide(); debuffs = nil end
+    if debuffs then
+        debuffs:ClearAllPoints()
+        debuffs:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", -2, 2 + POWER_H)   -- clear of the mana bar
+    end
+    for _, box in ipairs({ dispel, hots, debuffs }) do
         pcall(box.SetFrameLevel, box, c.hp:GetFrameLevel() + 3)
         pcall(box.SetUnit, box, "none")
     end
-    c.dispelBox, c.hotBox = dispel, hots
+    c.dispelBox, c.hotBox, c.debuffBox = dispel, hots, debuffs
 end
 
 -- point the containers at the frame's player (also called in combat)
 local function SetAuraBoxUnit(btn, unit)
-    for _, box in ipairs({ btn.c.dispelBox, btn.c.hotBox }) do
+    for _, box in ipairs({ btn.c.dispelBox, btn.c.hotBox, btn.c.debuffBox }) do
         if box then
             pcall(function()
                 if box:GetUnit() ~= (unit or "none") then box:SetUnit(unit or "none") end

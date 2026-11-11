@@ -7,12 +7,13 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Grid layout.** Compact squares, five per column, one column per group. Works solo, in a party and in raids up to 40.
 - **Click-casting.** Bind spells to left, right, middle, mouse 4, mouse 5 and the mouse wheel (up and down), with or without Shift, Ctrl or Alt, then click (or scroll over) a frame to cast on that player. Wheel directions with nothing bound still zoom the camera.
 - **Your HoTs.** Small icons in the top-right corner of each frame.
+- **All debuffs.** Small icons in the bottom-right corner for every debuff on the player, whether or not you can remove it (up to four). Works in combat.
 - **Dispellable debuffs.** When someone has a debuff you can remove, their whole frame pulses in the debuff's color (blue magic, magenta curse, red disease, teal poison), with a thin outline in the same color.
 - **Incoming heals.** A light green extension on the health bar for heals about to land, that slides out from the health edge when a heal starts, then softly pulses until it lands. HoTs (Renew, Rejuvenation, Regrowth) from anyone add a softer, steady segment of the same green after it showing what they still have left to heal, shrinking as they tick. When the game doesn't report a HoT's amount (common for other players' HoTs), the spell rank's base healing is used.
 - **Resources (optional).** Tick **Show mana / rage / energy bar** in settings for a thin bar along the bottom of each frame: mana (blue), rage (red) or energy (yellow). Off by default. While a player is casting, the mana that cast will cost shows as a lighter section at the end of their bar.
 - **Shields.** A thin white bar along the top of a frame shows how much absorb a shield (like Power Word: Shield) has left. It works in combat.
 - **Your target.** The frame of whoever you have targeted gets a white outline.
-- **Range and aggro.** Out-of-range players are dimmed, and players with aggro get an amber outline (faint for high threat).
+- **Range and aggro.** Out-of-range players are dimmed, and players with aggro get a red outline (faint for high threat).
 - **Lock button.** A small padlock above the top-left corner unlocks the frames. While unlocked, drag anywhere on them to move them, and drag the bottom-right corner to resize: right for wider frames, down for taller ones. Click the padlock again to lock.
 - **Settings button.** A small gear next to the padlock opens the settings window (same as `/fhb`).
 
