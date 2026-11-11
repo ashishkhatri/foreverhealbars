@@ -1451,19 +1451,20 @@ end)
 ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("PLAYER_LOGIN")
 
--- Range is polled (there is no event for it); HoT segments refresh as they tick down.
-local elapsed, hotElapsed = 0, 0
+-- Range is polled (there is no event for it). Buffs and debuffs are also
+-- re-checked every half second as a safety net, in case the game's aura
+-- events arrive late; that also keeps HoT segments ticking down.
+local elapsed, auraTick = 0, 0
 ev:SetScript("OnUpdate", function(_, dt)
     elapsed = elapsed + dt
     if elapsed < 0.2 then return end
     elapsed = 0
-    hotElapsed = hotElapsed + 1
-    local hots = hotElapsed >= 5                       -- every ~1s
-    if hots then hotElapsed = 0 end
+    auraTick = auraTick + 1
+    local auras = auraTick % 2 == 0                    -- ~every 0.4s
     for _, b in ipairs(buttons) do
         if b.unit and b:IsShown() then
             UpdateRange(b)
-            if hots then UpdateHots(b) end
+            if auras then UpdateAuras(b) end
         end
     end
 end)
