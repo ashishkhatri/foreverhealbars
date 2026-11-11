@@ -627,19 +627,58 @@ local function UpdateAurasLegacy(btn)
     end
 end
 
--- HoTs the game's incoming-heal number leaves out. Each active one adds one
--- tick (the per-tick amount the aura reports), about the next 3 seconds.
-local HOT_SPELLS = { ["Renew"] = true, ["Rejuvenation"] = true, ["Regrowth"] = true }
+-- HoTs the game's incoming-heal number leaves out. Each active Renew,
+-- Rejuvenation or Regrowth (from anyone) adds what it has left to heal: the
+-- per-tick amount the aura reports, or, when the game doesn't report it
+-- (common for other players' HoTs), the spell rank's base healing.
+local HOT_TICK = 3                                  -- seconds between ticks
+local HOT_NAMES = { ["Renew"] = 5, ["Rejuvenation"] = 4, ["Regrowth"] = 7 }   -- ticks
+-- spell ID -> { total base healing, ticks } (Classic ranks)
+local HOT_RANKS = {}
+for _, spell in ipairs({
+    { 5, { 139, 45 }, { 6074, 100 }, { 6075, 175 }, { 6076, 245 }, { 6077, 315 },          -- Renew
+         { 6078, 400 }, { 10927, 510 }, { 10928, 650 }, { 10929, 810 }, { 25315, 970 } },
+    { 4, { 774, 32 }, { 1058, 56 }, { 1430, 116 }, { 2090, 180 }, { 2091, 244 },            -- Rejuvenation
+         { 3627, 304 }, { 8910, 388 }, { 9839, 488 }, { 9840, 608 }, { 9841, 756 }, { 25299, 888 } },
+    { 7, { 8936, 98 }, { 8938, 175 }, { 8939, 259 }, { 8940, 343 }, { 8941, 427 },          -- Regrowth (HoT part)
+         { 9750, 546 }, { 9856, 686 }, { 9857, 861 }, { 9858, 1064 } },
+}) do
+    local ticks = spell[1]
+    for k = 2, #spell do HOT_RANKS[spell[k][1]] = { total = spell[k][2], ticks = ticks } end
+end
+
+local function HotFromAura(a, now)
+    local id, name = a.spellId, a.name
+    local rank = Readable(id) and HOT_RANKS[id] or nil
+    local ticks = rank and rank.ticks or (Readable(name) and HOT_NAMES[name]) or nil
+    if not ticks then return nil end
+
+    local okp, pv = pcall(function() return a.points and a.points[1] end)
+    local perTick
+    if okp and Readable(pv) and type(pv) == "number" and pv > 0 then
+        perTick = pv
+    elseif rank then
+        perTick = rank.total / rank.ticks
+    else
+        return nil
+    end
+
+    local left = ticks
+    local exp = a.expirationTime
+    if Readable(exp) and type(exp) == "number" and exp > 0 then
+        left = math.max(0, math.min(ticks, math.ceil((exp - now) / HOT_TICK - 0.01)))
+    end
+    return left * perTick
+end
+
 local function HotAmount(u)
     if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return 0 end
-    local sum = 0
+    local sum, now = 0, GetTime()
     for i = 1, 40 do
         local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL")
         if not a then break end
-        if HOT_SPELLS[a.name] and a.points and a.points[1] then
-            local tick = a.points[1]
-            if tick > 0 then sum = sum + tick end
-        end
+        local ok, amount = pcall(HotFromAura, a, now)   -- one unreadable aura doesn't stop the rest
+        if ok and amount then sum = sum + amount end
     end
     return sum
 end
@@ -1390,14 +1429,20 @@ end)
 ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("PLAYER_LOGIN")
 
--- Range is polled; there is no event for it.
-local elapsed = 0
+-- Range is polled (there is no event for it); HoT segments refresh as they tick down.
+local elapsed, hotElapsed = 0, 0
 ev:SetScript("OnUpdate", function(_, dt)
     elapsed = elapsed + dt
     if elapsed < 0.2 then return end
     elapsed = 0
+    hotElapsed = hotElapsed + 1
+    local hots = hotElapsed >= 5                       -- every ~1s
+    if hots then hotElapsed = 0 end
     for _, b in ipairs(buttons) do
-        if b.unit and b:IsShown() then UpdateRange(b) end
+        if b.unit and b:IsShown() then
+            UpdateRange(b)
+            if hots then UpdateHots(b) end
+        end
     end
 end)
 
