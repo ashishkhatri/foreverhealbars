@@ -344,7 +344,7 @@ end
 
 ---------------------------------------------------------------------------
 -- Dispellable debuff effect: the whole frame pulses in the debuff type's
--- colour (a wash fading in and out about once a second), with a thin
+-- colour (a wash slowly breathing between strong and medium), with a thin
 -- outline in the same colour so it still reads at the faint end.
 ---------------------------------------------------------------------------
 BuildDispelFx = function(btn)
@@ -360,9 +360,9 @@ BuildDispelFx = function(btn)
     local pulse = wash:CreateAnimationGroup()
     pulse:SetLooping("BOUNCE")
     local a = pulse:CreateAnimation("Alpha")
-    a:SetFromAlpha(0.65)
-    a:SetToAlpha(0.1)
-    a:SetDuration(0.5)
+    a:SetFromAlpha(0.6)
+    a:SetToAlpha(0.3)            -- never fades out, so it reads as a steady glow
+    a:SetDuration(1.25)          -- slow breathing, ~2.5s per cycle
     a:SetSmoothing("IN_OUT")
 
     local outline = Border(fx, 0, 1)
