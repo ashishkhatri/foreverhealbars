@@ -29,6 +29,11 @@ local CLICK_LABEL = { "Left", "Right", "Middle", "Mouse 4", "Mouse 5" }
 ---------------------------------------------------------------------------
 local function Msg(fmt, ...) print(PREFIX .. string.format(fmt, ...)) end
 
+-- false for nil and for values the game hides from addons ("secret")
+local function Readable(v)
+    return v ~= nil and not (issecretvalue and issecretvalue(v))
+end
+
 -- Run now, or as soon as combat ends (secure frames can't change in combat).
 local function OutOfCombat(fn)
     if InCombatLockdown() then
@@ -197,6 +202,19 @@ local function Build(btn)
     pwbg:SetAllPoints()
     pwbg:SetColorTexture(0, 0, 0, 0.6)
     c.power = pw
+
+    -- mana an in-progress cast will spend: a lighter section at the end of the
+    -- power fill, growing back from the current amount
+    local cost = CreateFrame("StatusBar", nil, pw)
+    cost:SetStatusBarTexture(BAR)
+    cost:SetReverseFill(true)
+    cost:SetPoint("TOPRIGHT", pw:GetStatusBarTexture(), "TOPRIGHT")
+    cost:SetPoint("BOTTOMRIGHT", pw:GetStatusBarTexture(), "BOTTOMRIGHT")
+    cost:SetWidth(W)
+    cost:SetMinMaxValues(0, 1)
+    cost:SetValue(0)
+    cost:Hide()
+    c.powerCost = cost
 
     local hp = CreateFrame("StatusBar", nil, c)
     hp:SetPoint("TOPLEFT")
@@ -482,8 +500,40 @@ local function UpdatePower(btn)
     end
     col = col or POWER_COLOR.MANA
     c.power:SetStatusBarColor(col[1], col[2], col[3])
-    c.power:SetMinMaxValues(0, UnitPowerMax(u))
+    -- lighter shade of the same colour for the pending cast cost
+    c.powerCost:SetStatusBarColor(col[1] + (1 - col[1]) * 0.55, col[2] + (1 - col[2]) * 0.55,
+        col[3] + (1 - col[3]) * 0.55)
+    local max = UnitPowerMax(u)
+    c.power:SetMinMaxValues(0, max)
     c.power:SetValue(UnitPower(u))
+    c.powerCost:SetMinMaxValues(0, max)
+end
+
+-- Power cost of a spell for this unit's power type (nil if unknown/hidden).
+local function CastCost(u, spellID)
+    if not Readable(spellID) then return nil end
+    local getCost = (C_Spell and C_Spell.GetSpellPowerCost) or GetSpellPowerCost
+    if not getCost then return nil end
+    local costs = getCost(spellID)
+    local ptype = UnitPowerType(u)
+    for _, pc in ipairs(costs or {}) do
+        if pc.type == ptype and type(pc.cost) == "number" and pc.cost > 0 then return pc.cost end
+    end
+end
+
+local function ShowCastCost(btn, spellID)
+    local c = btn.c
+    local ok, amount = pcall(CastCost, btn.unit, spellID)
+    if ok and amount and DB.showPower then
+        c.powerCost:SetValue(amount)
+        c.powerCost:Show()
+    else
+        c.powerCost:Hide()
+    end
+end
+
+local function HideCastCost(btn)
+    btn.c.powerCost:Hide()
 end
 
 local function UpdateIdentity(btn)
@@ -525,9 +575,6 @@ local function RefreshCures()
     end
 end
 
-local function Readable(v)
-    return v ~= nil and not (issecretvalue and issecretvalue(v))
-end
 
 local dispelCurve
 local function DispelColor(u, a)
@@ -915,6 +962,7 @@ local function InitButton(self, name)
             b.c.dmg:Hide()
             b.incActive = nil            -- next update re-places the HoT segment
             b.c.incPulse:Stop()
+            b.c.powerCost:Hide()
             b.unit = value
             Remap()
             if value then UpdateAll(b) end
@@ -1049,6 +1097,7 @@ local function ApplySize(w, h)
         b.c.name:SetWidth(w - 6)
         b.c.inc:SetWidth(w)
         b.c.hot:SetWidth(w)
+        b.c.powerCost:SetWidth(w)
         -- short frames: name only, centred; tall enough: name above missing health
         b.roomy = h >= 34
         b.c.status:SetShown(b.roomy)
@@ -1472,7 +1521,19 @@ local UNIT_EVENTS = {
     UNIT_NAME_UPDATE = UpdateIdentity,
 }
 
-ev:SetScript("OnEvent", function(_, event, arg1)
+local CAST_END = { UNIT_SPELLCAST_STOP = true, UNIT_SPELLCAST_FAILED = true,
+    UNIT_SPELLCAST_INTERRUPTED = true, UNIT_SPELLCAST_SUCCEEDED = true }
+
+ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
+    if event == "UNIT_SPELLCAST_START" then
+        local list = byUnit[arg1]
+        if list then for _, b in ipairs(list) do ShowCastCost(b, arg3) end end
+        return
+    elseif CAST_END[event] then
+        local list = byUnit[arg1]
+        if list then for _, b in ipairs(list) do HideCastCost(b) end end
+        return
+    end
     local fn = UNIT_EVENTS[event]
     if fn then ForUnit(arg1, fn) return end
 
@@ -1506,6 +1567,8 @@ ev:SetScript("OnEvent", function(_, event, arg1)
             SetLocked(DB.locked)
         end)
         for e in pairs(UNIT_EVENTS) do pcall(ev.RegisterEvent, ev, e) end
+        pcall(ev.RegisterEvent, ev, "UNIT_SPELLCAST_START")
+        for e in pairs(CAST_END) do pcall(ev.RegisterEvent, ev, e) end
         ev:RegisterEvent("GROUP_ROSTER_UPDATE")
         ev:RegisterEvent("PLAYER_TARGET_CHANGED")
         ev:RegisterEvent("PLAYER_ENTERING_WORLD")
