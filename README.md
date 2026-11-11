@@ -13,6 +13,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Resources (optional).** Tick **Show mana / rage / energy bar** in settings for a thin bar along the bottom of each frame: mana (blue), rage (red) or energy (yellow). Off by default. While a player is casting, the mana that cast will cost shows as a lighter section at the end of their bar.
 - **Shields.** A thin white bar along the top of a frame shows how much absorb a shield (like Power Word: Shield) has left. It works in combat.
 - **Pets.** Each player's pet gets a narrower frame right beside its owner's, in a darker shade of the owner's class color, with the same click-casting. Untick **Show pets beside their owners** in `/fhb` (or type `/fhb pets`) to hide them.
+- **Buff reminders.** Out of combat, frames flash the icon of any of your buffs that player is missing or that runs out within 5 minutes: Fortitude, Divine Spirit and Shadow Protection for priests, Arcane Intellect for mages (mana users only), Mark of the Wild for druids (and Thorns on tanks). Only buffs you know are checked, and the group versions count. They hide in combat. Untick **Flash buffs players need from you** in `/fhb` (or `/fhb buffs`) to turn them off.
 - **Roles.** A small tank, healer or damage icon in the top-left corner of each frame, from the group's role assignment (or the raid's main tank mark).
 - **Your target.** The frame of whoever you have targeted gets a white outline.
 - **Range and aggro.** Out-of-range players are dimmed, and players with aggro get a red outline (faint for high threat).
@@ -64,6 +65,7 @@ Use `/fhb` or `/healbars`.
 | `/fhb unlock` | Unlock the frames to drag them (same as the padlock) |
 | `/fhb lock` | Lock them again |
 | `/fhb scale 1.2` | Scale everything, text included (0.5 to 2) |
+| `/fhb buffs` | Turn buff reminders on or off |
 | `/fhb pets` | Show or hide pet frames beside their owners |
 | `/fhb blizzard` | Turn hiding Blizzard's party and raid frames on or off |
 | `/fhb debug` | List the debuffs and buffs on your target (or yourself) and what the game reports about them |

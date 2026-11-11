@@ -9,6 +9,7 @@ local MAX_BUTTONS = 40
 local OOR_DIM = 0.65                  -- darkness of the overlay on out-of-range players
 local HOT_SIZE, MAX_HOTS = 11, 3
 local ROLE_SIZE = 11
+local NEED_SIZE = 12
 local INC_EASE = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
 local POWER_H = 3                     -- height of the resource bar
 local SHIELD_H = 6                    -- height of the shield (absorb) bar
@@ -348,6 +349,30 @@ local function Build(btn)
     role:SetPoint("TOPLEFT", 2, -2)
     role:Hide()
     c.role = role
+
+    -- buffs this player needs from you: icons flashing after the role icon
+    local need = CreateFrame("Frame", nil, text)
+    need:SetPoint("TOPLEFT", ROLE_SIZE + 4, -2)
+    need:SetSize((NEED_SIZE + 1) * 3, NEED_SIZE)
+    need:Hide()
+    c.need = need
+    c.needIcons = {}
+    for i = 1, 3 do
+        local t = need:CreateTexture(nil, "OVERLAY")
+        t:SetSize(NEED_SIZE, NEED_SIZE)
+        t:SetPoint("TOPLEFT", (i - 1) * (NEED_SIZE + 1), 0)
+        t:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        t:Hide()
+        c.needIcons[i] = t
+    end
+    local flash = need:CreateAnimationGroup()
+    flash:SetLooping("BOUNCE")
+    local fa = flash:CreateAnimation("Alpha")
+    fa:SetFromAlpha(1)
+    fa:SetToAlpha(0.15)
+    fa:SetDuration(0.5)
+    fa:SetSmoothing("IN_OUT")
+    c.needFlash = flash
 
     c.hots = {}
     for i = 1, MAX_HOTS do
@@ -1225,6 +1250,97 @@ local function UpdateHots(btn)
     btn.c.hot:SetShown(btn.hotAmount > 0)
 end
 
+---------------------------------------------------------------------------
+-- Buff reminders. Out of combat, each frame flashes the icon of any of your
+-- buffs the player is missing or that runs out within 5 minutes. In combat
+-- the game hides buffs from addons, so the icons go away then.
+-- Each entry: the spells that count (single and group versions), who needs
+-- it ("all", "mana" users, or "tank" role).
+---------------------------------------------------------------------------
+local BUFF_SOON = 300
+local CLASS_BUFFS = {
+    PRIEST = {
+        { "Power Word: Fortitude", "Prayer of Fortitude", who = "all" },
+        { "Divine Spirit", "Prayer of Spirit", who = "mana" },
+        { "Shadow Protection", "Prayer of Shadow Protection", who = "all" },
+    },
+    MAGE = { { "Arcane Intellect", "Arcane Brilliance", who = "mana" } },
+    DRUID = {
+        { "Mark of the Wild", "Gift of the Wild", who = "all" },
+        { "Thorns", who = "tank" },
+    },
+}
+local myBuffs = {}            -- the entries you know, each with its icon
+
+local function RefreshMyBuffs()
+    wipe(myBuffs)
+    local _, class = UnitClass("player")
+    for _, entry in ipairs(CLASS_BUFFS[class] or {}) do
+        local name, icon = SpellInfo(entry[1])
+        if not name and entry[2] then name, icon = SpellInfo(entry[2]) end
+        if name then
+            local names = {}
+            for _, n in ipairs(entry) do names[n] = true end
+            myBuffs[#myBuffs + 1] = { names = names, icon = icon or 134400, who = entry.who }
+        end
+    end
+end
+
+local function NeedsBuff(u, entry)
+    if entry.who == "mana" then
+        local ok, pt = pcall(UnitPowerType, u)
+        if not (ok and Readable(pt) and pt == 0) then return false end
+    elseif entry.who == "tank" then
+        if UnitRole(u) ~= "TANK" then return false end
+    end
+    return true
+end
+
+local function UpdateBuffNeeds(btn)
+    local c, u = btn.c, btn.unit
+    local shown = 0
+    if DB.buffReminders ~= false and #myBuffs > 0 and u and UnitExists(u) and not InCombatLockdown()
+        and UnitIsConnected(u) and not UnitIsDeadOrGhost(u) then
+        local ok = pcall(function()
+            -- what this player has, and how long it has left
+            local left = {}
+            local now = GetTime()
+            for i = 1, 40 do
+                local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL")
+                if not a then break end
+                local name, exp = a.name, a.expirationTime
+                if Readable(name) then
+                    local rem = (Readable(exp) and exp > 0) and (exp - now) or math.huge
+                    if not left[name] or rem > left[name] then left[name] = rem end
+                end
+            end
+            for _, entry in ipairs(myBuffs) do
+                if shown >= 3 then break end
+                if NeedsBuff(u, entry) then
+                    local best = -1
+                    for n in pairs(entry.names) do
+                        if left[n] and left[n] > best then best = left[n] end
+                    end
+                    if best < BUFF_SOON then
+                        shown = shown + 1
+                        c.needIcons[shown]:SetTexture(entry.icon)
+                        c.needIcons[shown]:Show()
+                    end
+                end
+            end
+        end)
+        if not ok then shown = 0 end
+    end
+    for i = shown + 1, 3 do c.needIcons[i]:Hide() end
+    if shown > 0 then
+        c.need:Show()
+        if not c.needFlash:IsPlaying() then c.needFlash:Play() end
+    else
+        c.needFlash:Stop()
+        c.need:Hide()
+    end
+end
+
 local function UpdateAuras(btn)
     local u = btn.unit
     if not u or not UnitExists(u) then return end
@@ -1238,6 +1354,7 @@ local function UpdateAuras(btn)
         for k = 1, MAX_HOTS do btn.c.hots[k]:Hide() end
         btn.c.dispel:Set(nil)
     end
+    UpdateBuffNeeds(btn)
 end
 
 -- Threat: 0 none, 1 high threat, 2-3 has aggro. Used directly as the outline's
@@ -2097,6 +2214,20 @@ local function CreateConfig()
     hideLabel:SetFontObject("GameFontHighlightSmall")
     hideLabel:SetText("Hide Blizzard party and raid frames")
     hide:SetScript("OnClick", function(self) SetHideBlizzard(self:GetChecked() and true or false) end)
+
+    local remind = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+    remind:SetSize(22, 22)
+    remind:SetPoint("LEFT", hideLabel, "RIGHT", 24, 0)
+    local remindLabel = remind.Text or remind.text or remind:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    remindLabel:ClearAllPoints()
+    remindLabel:SetPoint("LEFT", remind, "RIGHT", 2, 0)
+    remindLabel:SetFontObject("GameFontHighlightSmall")
+    remindLabel:SetText("Flash buffs players need from you")
+    remind:SetScript("OnClick", function(self)
+        DB.buffReminders = self:GetChecked() and true or false
+        for _, b in ipairs(buttons) do if b.c then UpdateBuffNeeds(b) end end
+    end)
+    f.showReminders = remind
     f.hideBlizz = hide
 
     local pwr = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
@@ -2175,6 +2306,7 @@ local function CreateConfig()
         self.hideBlizz:SetChecked(DB.hideBlizzard)
         self.showPower:SetChecked(DB.showPower)
         self.showPets:SetChecked(DB.pets ~= false)
+        self.showReminders:SetChecked(DB.buffReminders ~= false)
     end)
     f:Hide()
     return f
@@ -2240,6 +2372,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if DB.hideBlizzard == nil then DB.hideBlizzard = true end
         if DB.showPower == nil then DB.showPower = false end
         if DB.pets == nil then DB.pets = true end
+        if DB.buffReminders == nil then DB.buffReminders = true end
     elseif event == "PLAYER_LOGIN" then
         charKey = UnitName("player") .. "-" .. GetRealmName()
         -- give defaults to characters with no bindings, and upgrade ones still
@@ -2269,15 +2402,20 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         pcall(ev.RegisterEvent, ev, "PLAYER_ROLES_ASSIGNED")
         ev:RegisterEvent("PLAYER_ENTERING_WORLD")
         ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+        ev:RegisterEvent("PLAYER_REGEN_DISABLED")
         pcall(ev.RegisterEvent, ev, "SPELLS_CHANGED")
         RefreshCures()
+        RefreshMyBuffs()
     elseif event == "PLAYER_ROLES_ASSIGNED" then
         for _, b in ipairs(buttons) do if b.unit and b:IsShown() then UpdateRole(b) end end
     elseif event == "PLAYER_TARGET_CHANGED" then
         for _, b in ipairs(buttons) do if b.unit and b:IsShown() then UpdateSelected(b) end end
     elseif event == "SPELLS_CHANGED" then
         RefreshCures()
+        RefreshMyBuffs()
         for _, b in ipairs(buttons) do if b.unit and b:IsShown() then UpdateAuras(b) end end
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        for _, b in ipairs(buttons) do if b.c then UpdateBuffNeeds(b) end end
     elseif event == "PLAYER_REGEN_ENABLED" then
         local list = pending
         pending = {}
@@ -2428,6 +2566,11 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
             end
         end)
         if not okAll then Msg("  couldn't read debuffs: %s", tostring(err)) end
+    elseif cmd == "buffs" then
+        DB.buffReminders = not DB.buffReminders
+        if config and config.showReminders then config.showReminders:SetChecked(DB.buffReminders) end
+        for _, b in ipairs(buttons) do if b.c then UpdateBuffNeeds(b) end end
+        Msg("buff reminders %s.", DB.buffReminders and "on" or "off")
     elseif cmd == "pets" then
         DB.pets = not DB.pets
         if config and config.showPets then config.showPets:SetChecked(DB.pets) end
