@@ -531,16 +531,30 @@ local function DispelColor(u, a)
     return 0.8, 0.8, 0.8
 end
 
+-- Buffs worth an icon: known HoTs and shields by name, or, if the game hides
+-- names, any of your buffs lasting 30 seconds or less.
+local HOT_ICONS = { ["Renew"] = true, ["Rejuvenation"] = true, ["Regrowth"] = true,
+    ["Power Word: Shield"] = true }
+local function IsHotAura(a)
+    local name = a.name
+    if Readable(name) then return HOT_ICONS[name] == true end
+    local dur = a.duration
+    return Readable(dur) and dur > 0 and dur <= 30
+end
+
 local function UpdateHotIcons(btn)
     local u, c = btn.unit, btn.c
-    -- your HoTs and shields ("RAID" = the buffs worth showing on raid frames)
     local n = 0
     for i = 1, 40 do
-        local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL|PLAYER|RAID")
-        if not a or n >= MAX_HOTS then break end
-        n = n + 1
-        c.hots[n]:SetTexture(a.icon)
-        c.hots[n]:Show()
+        if n >= MAX_HOTS then break end
+        local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL|PLAYER")
+        if not a then break end
+        local ok, hot = pcall(IsHotAura, a)
+        if ok and hot then
+            n = n + 1
+            c.hots[n]:SetTexture(a.icon)
+            c.hots[n]:Show()
+        end
     end
     for k = n + 1, MAX_HOTS do c.hots[k]:Hide() end
 end
@@ -1427,6 +1441,18 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
             end
             local r = C_UnitAuras.GetAuraDataByIndex(u, 1, "HARMFUL|RAID")
             Msg("  game's dispellable filter: %s", r and ("found " .. show(r.name)) or "nothing")
+            Msg("buffs on %s:", u)
+            for i = 1, 40 do
+                local b = C_UnitAuras.GetAuraDataByIndex(u, i, "HELPFUL")
+                if not b then
+                    if i == 1 then Msg("  no buffs found") end
+                    break
+                end
+                local okp, p1 = pcall(function() return b.points and b.points[1] end)
+                if not okp then p1 = "<hidden>" end
+                Msg("  %d. %s  from=%s  duration=%s  tick=%s", i, show(b.name), show(b.sourceUnit),
+                    show(b.duration), show(p1))
+            end
         end)
         if not okAll then Msg("  couldn't read debuffs: %s", tostring(err)) end
     elseif cmd == "blizzard" then

@@ -61,7 +61,7 @@ Use `/fhb` or `/healbars`.
 | `/fhb lock` | Lock them again |
 | `/fhb scale 1.2` | Scale everything, text included (0.5 to 2) |
 | `/fhb blizzard` | Turn hiding Blizzard's party and raid frames on or off |
-| `/fhb debug` | List the debuffs on your target (or yourself) and what the game reports about them |
+| `/fhb debug` | List the debuffs and buffs on your target (or yourself) and what the game reports about them |
 | `/fhb reset` | Put the frames back in the default spot, size and scale |
 
 ## Releasing
