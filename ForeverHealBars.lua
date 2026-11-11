@@ -252,13 +252,21 @@ local function Build(btn)
     -- HoT prediction: starts where the incoming-heal fill ends, paler green.
     local hot = CreateFrame("StatusBar", nil, c)
     hot:SetStatusBarTexture(BAR)
-    hot:SetStatusBarColor(HOT_COLOR[1], HOT_COLOR[2], HOT_COLOR[3], 0.55)
+    hot:SetStatusBarColor(HOT_COLOR[1], HOT_COLOR[2], HOT_COLOR[3], 0.35)
     hot:SetPoint("TOPLEFT", inc:GetStatusBarTexture(), "TOPRIGHT")
     hot:SetPoint("BOTTOMLEFT", inc:GetStatusBarTexture(), "BOTTOMRIGHT")
     hot:SetWidth(W)
     hot:SetMinMaxValues(0, 1)
     hot:SetValue(0)
     hot:SetFrameLevel(inc:GetFrameLevel())
+    -- dashed lines over the HoT fill, so it can't be mistaken for cast heals
+    local dashes = hot:CreateTexture(nil, "ARTWORK", nil, 1)
+    dashes:SetTexture(string.format("Interface\\AddOns\\%s\\media\\dashes", ADDON), "REPEAT", "REPEAT")
+    dashes:SetHorizTile(true)
+    dashes:SetVertTile(true)
+    dashes:SetVertexColor(0.8, 0.95, 1, 0.9)
+    dashes:SetAllPoints(hot:GetStatusBarTexture())
+    hot:Hide()                                -- only shown while a HoT is ticking
     c.hot = hot
 
     -- Glow: once a heal is on the way the segment softly pulses until it lands.
@@ -381,6 +389,7 @@ local function UpdateHealth(btn)
     c.inc:SetMinMaxValues(0, max)
     c.hot:SetMinMaxValues(0, max)
     c.hot:SetValue(btn.hotAmount or 0)
+    c.hot:SetShown((btn.hotAmount or 0) > 0)
     local incoming = UnitGetIncomingHeals and UnitGetIncomingHeals(u)
     -- the game returns nothing when no heals are coming
     if incoming then
@@ -688,6 +697,7 @@ local function UpdateHots(btn)
     -- if the game hides aura details, show no HoT segment rather than erroring
     btn.hotAmount = ok and amount or 0
     btn.c.hot:SetValue(btn.hotAmount)
+    btn.c.hot:SetShown(btn.hotAmount > 0)
 end
 
 local function UpdateAuras(btn)
