@@ -1295,7 +1295,7 @@ local function CreateConfig()
     help:SetPoint("TOPLEFT", 16, -32)
     help:SetPoint("TOPRIGHT", -16, -32)
     help:SetJustifyH("LEFT")
-    help:SetText("Type a spell name as it appears in your spellbook, then press Enter. "
+    help:SetText("Drag a spell from your spellbook onto a box, or type its name and press Enter. "
         .. "|cffaaaaaatarget|r and |cffaaaaaamenu|r also work. Blank plain left / right = target / menu.")
 
     local top = -78
@@ -1346,6 +1346,29 @@ local function CreateConfig()
                 self:Refresh()
                 if not ApplyBindingsAll() then Msg("bindings will update after combat.") end
             end
+            -- a spell dragged from the spellbook and dropped (or clicked) here
+            local function TakeCursorSpell(self)
+                local kind, a1, a2, a3 = GetCursorInfo()
+                if kind ~= "spell" then return false end
+                local name
+                if a3 then name = SpellInfo(a3) end                       -- spell ID
+                if not name and a1 and GetSpellBookItemName then
+                    name = GetSpellBookItemName(a1, a2)                   -- book slot
+                end
+                if not name and C_SpellBook and C_SpellBook.GetSpellBookItemName and a1 then
+                    name = C_SpellBook.GetSpellBookItemName(a1, a2)
+                end
+                ClearCursor()
+                if not name then return true end
+                self:SetText(name)
+                Save(self)
+                self:ClearFocus()
+                return true
+            end
+            e:SetScript("OnReceiveDrag", TakeCursorSpell)
+            e:HookScript("OnMouseDown", function(self)
+                if GetCursorInfo() == "spell" then TakeCursorSpell(self) end
+            end)
             e:SetScript("OnEnterPressed", function(self) Save(self); self:ClearFocus() end)
             e:SetScript("OnEditFocusLost", Save)
             e:SetScript("OnEscapePressed", function(self) self:Refresh(); self:ClearFocus() end)
@@ -1393,6 +1416,21 @@ local function CreateConfig()
         DB.binds[charKey] = ClassDefaults()
         for _, e in ipairs(f.boxes) do e:Refresh() end
         if not ApplyBindingsAll() then Msg("bindings will update after combat.") end
+    end)
+
+    local book = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    book:SetSize(110, 22)
+    book:SetPoint("RIGHT", reset, "LEFT", -8, 0)
+    book:SetText("|TInterface\\Icons\\INV_Misc_Book_09:14:14:0:0:64:64:5:59:5:59|t  Spellbook")
+    book:SetScript("OnClick", function()
+        if InCombatLockdown() then Msg("the spellbook can't be opened during combat.") return end
+        if ToggleSpellBook then
+            ToggleSpellBook(BOOKTYPE_SPELL or "spell")
+        elseif PlayerSpellsUtil and PlayerSpellsUtil.ToggleSpellBookFrame then
+            PlayerSpellsUtil.ToggleSpellBookFrame()
+        elseif SpellBookFrame then
+            ToggleFrame(SpellBookFrame)
+        end
     end)
 
     f:SetScript("OnShow", function(self)

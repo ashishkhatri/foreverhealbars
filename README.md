@@ -27,7 +27,7 @@ Blizzard's own party and raid frames are hidden by default (the raid tools tab o
 
 ## Click-casting
 
-`/fhb` (or the gear next to the padlock) opens a window with a box for each click: left, right, middle, mouse 4 and mouse 5, plain or with Shift, Ctrl or Alt. Type a spell name as it appears in your spellbook and press Enter. The spell's icon appears next to the box, and the text turns red if the spell isn't in your spellbook.
+`/fhb` (or the gear next to the padlock) opens a window with a box for each click: left, right, middle, mouse 4 and mouse 5, plain or with Shift, Ctrl or Alt. Drag a spell from your spellbook onto a box (the **Spellbook** button opens it), or type its name and press Enter. The spell's icon appears next to the box, and the text turns red if the spell isn't in your spellbook.
 
 - Any plain left or right click with nothing bound targets the player or opens their menu.
 - **Reset to class defaults** restores the bindings below.
