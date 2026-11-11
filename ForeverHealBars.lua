@@ -10,6 +10,7 @@ local OOR_DIM = 0.65                  -- darkness of the overlay on out-of-range
 local HOT_SIZE, MAX_HOTS = 11, 3
 local INC_EASE = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
 local POWER_H = 3                     -- height of the resource bar
+local SHIELD_H = 3                    -- height of the shield (absorb) bar
 local BAR = "Interface\\Buttons\\WHITE8X8"
 
 local DB, charKey
@@ -281,6 +282,20 @@ local function Build(btn)
     hot:SetFrameLevel(inc:GetFrameLevel())
     hot:Hide()                                -- only shown while a HoT is ticking
     c.hot = hot
+
+    -- Shields: a thin white bar along the top of the frame, its width the
+    -- absorb remaining (the game hands that over as a finished number, so it
+    -- works in combat). Along the top so it shows even at full health.
+    local shield = CreateFrame("StatusBar", nil, c)
+    shield:SetPoint("TOPLEFT")
+    shield:SetPoint("TOPRIGHT")
+    shield:SetHeight(SHIELD_H)
+    shield:SetStatusBarTexture(BAR)
+    shield:SetStatusBarColor(0.92, 0.96, 1, 0.95)
+    shield:SetMinMaxValues(0, 1)
+    shield:SetValue(0)
+    shield:SetFrameLevel(hp:GetFrameLevel() + 1)
+    c.shield = shield
 
     -- Glow: once a heal is on the way the segment softly pulses until it lands.
     local pulse = inc:CreateAnimationGroup()
@@ -842,10 +857,18 @@ local function UpdateSelected(btn)
     pcall(function() btn.c.selected:SetAlpha(FromBool(UnitIsUnit(u, "target"), 1, 0)) end)
 end
 
+local function UpdateShield(btn)
+    local u = btn.unit
+    if not u or not UnitExists(u) or not UnitGetTotalAbsorbs then return end
+    btn.c.shield:SetMinMaxValues(0, UnitHealthMax(u))
+    btn.c.shield:SetValue(UnitGetTotalAbsorbs(u) or 0)
+end
+
 local function UpdateAll(btn)
     UpdateIdentity(btn)
     UpdateHealth(btn)
     UpdatePower(btn)
+    UpdateShield(btn)
     UpdateAuras(btn)
     UpdateThreat(btn)
     UpdateRange(btn)
@@ -1574,8 +1597,9 @@ end
 local UNIT_EVENTS = {
     UNIT_HEALTH = OnHealthChanged,
     UNIT_HEALTH_FREQUENT = UpdateHealth,
-    UNIT_MAXHEALTH = UpdateHealth,
+    UNIT_MAXHEALTH = function(b) UpdateHealth(b); UpdateShield(b) end,
     UNIT_HEAL_PREDICTION = UpdateHealth,
+    UNIT_ABSORB_AMOUNT_CHANGED = UpdateShield,
     UNIT_CONNECTION = UpdateAll,
     UNIT_FLAGS = UpdateHealth,
     UNIT_AURA = UpdateAuras,
