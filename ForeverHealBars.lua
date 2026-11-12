@@ -5,6 +5,10 @@ local ADDON = ...
 local PREFIX = "|cff33ff99Forever Heal Bars|r: "
 
 local W, H, GAP = 72, 46, 3          -- button size and spacing
+-- Text grows and shrinks with the frames: 10 pt at the default size, never
+-- below 9 pt (smaller gets hard to read) or above 18 pt.
+local FONT_BASE, FONT_MIN, FONT_MAX = 10, 9, 18
+local fontSize, nameLift = FONT_BASE, 6   -- current name size; how far the name sits above centre
 local MAX_BUTTONS = 40
 local OOR_DIM = 0.65                  -- darkness of the overlay on out-of-range players
 local HOT_SIZE, MAX_HOTS = 11, 3
@@ -633,7 +637,7 @@ local function UpdateHealth(btn)
     if has ~= btn.hasStatus then
         btn.hasStatus = has
         c.name:ClearAllPoints()
-        c.name:SetPoint("CENTER", 0, (btn.roomy and has) and 6 or 0)
+        c.name:SetPoint("CENTER", 0, (btn.roomy and has) and nameLift or 0)
     end
 end
 
@@ -1760,10 +1764,27 @@ local function ConfigSnippet(w, h)
 end
 
 local layoutTick = 0
+local function FontFor(w, h)
+    local f = math.min(w / W, h / H)
+    return math.max(FONT_MIN, math.min(FONT_MAX, math.floor(FONT_BASE * f + 0.5)))
+end
+
+local function ApplyFonts(b)
+    local file, _, flags = GameFontHighlightSmall:GetFont()
+    -- pets are narrower: their text follows their own width
+    local size = b.isPet and math.max(FONT_MIN, math.min(fontSize, FontFor(b:GetWidth(), b:GetHeight()))) or fontSize
+    b.c.name:SetFont(file, size, flags)
+    b.c.status:SetFont(file, math.max(FONT_MIN - 1, size - 1), flags)
+    b.c.status:ClearAllPoints()
+    b.c.status:SetPoint("CENTER", 0, -math.floor(size * 0.8 + 0.5))
+end
+
 local function ApplySize(w, h)
     w = math.max(MIN_W, math.min(MAX_W, math.floor(w + 0.5)))
     h = math.max(MIN_H, math.min(MAX_H, math.floor(h + 0.5)))
     DB.w, DB.h = w, h
+    fontSize = FontFor(w, h)
+    nameLift = math.floor(fontSize * 0.6 + 0.5)
     for _, b in ipairs(buttons) do
         local bw = b.isPet and PetWidth(w) or w
         b:SetSize(bw, h)
@@ -1771,11 +1792,12 @@ local function ApplySize(w, h)
         b.c.inc:SetWidth(bw)
         b.c.hot:SetWidth(bw)
         b.c.powerCost:SetWidth(bw)
+        ApplyFonts(b)
         -- short frames: name only, centred; tall enough: name above missing health
-        b.roomy = h >= 34
+        b.roomy = h >= math.max(34, fontSize * 2 + 14)
         b.c.status:SetShown(b.roomy)
         b.c.name:ClearAllPoints()
-        b.c.name:SetPoint("CENTER", 0, (b.roomy and b.hasStatus) and 6 or 0)
+        b.c.name:SetPoint("CENTER", 0, (b.roomy and b.hasStatus) and nameLift or 0)
     end
     anchor:SetSize(w, h)
     header:SetAttribute("columnSpacing", ColumnSpacing(w))
