@@ -2436,7 +2436,8 @@ local function CreateConfig()
         end
     end) end
 
-    f:SetScript("OnShow", function(self)
+    -- (a hook, not SetScript: SetScript would drop the Spellbook button's hook above)
+    f:HookScript("OnShow", function(self)
         for _, e in ipairs(self.boxes) do e:Refresh() end
         self.hideBlizz:SetChecked(DB.hideBlizzard)
         self.showPower:SetChecked(DB.showPower)
@@ -2719,9 +2720,7 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         if not OutOfCombat(function() PlaceAnchor(); ApplySize(W, H) end) then
             Msg("will reset after combat.")
         end
-        if config and config:IsShown() then config:GetScript("OnShow")(config) end
     else
-        Msg("/fhb  (settings)  |  unlock  |  lock  |  pets  |  buffs  |  blizzard  |  reset  |  debug"
-            .. "  (all of these are also in the settings window)")
+        Msg("/fhb  (settings)  |  unlock  |  lock  |  pets  |  buffs  |  blizzard  |  reset  |  debug")
     end
 end
