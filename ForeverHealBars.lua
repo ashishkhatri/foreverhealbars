@@ -1974,7 +1974,10 @@ end
 local function SetLocked(locked)
     if InCombatLockdown() then
         pending[#pending + 1] = function() SetLocked(locked) end
-        Msg("will %s after combat.", locked and "lock" or "unlock")
+        local text = locked and "Can't lock the frames in combat. They'll lock when combat ends."
+            or "Can't unlock or move the frames in combat. They'll unlock when combat ends."
+        if UIErrorsFrame then UIErrorsFrame:AddMessage(text, 1, 0.2, 0.2) end
+        Msg(text)
         return
     end
     DB.locked = locked
@@ -2002,6 +2005,11 @@ local function CreateLockButton()
         GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
         GameTooltip:SetText(DB.locked and "Frames locked" or "Frames unlocked", 1, 1, 1)
         GameTooltip:AddLine(DB.locked and "Click to unlock and drag them." or "Click to lock them in place.", nil, nil, nil, true)
+        if InCombatLockdown() then
+            GameTooltip:AddLine("You can't unlock, move or resize the frames in combat.", 1, 0.3, 0.3, true)
+        else
+            GameTooltip:AddLine("Can't be unlocked, moved or resized in combat.", 0.6, 0.6, 0.6, true)
+        end
         GameTooltip:Show()
     end)
     lockBtn:SetScript("OnLeave", function(self)
@@ -2512,7 +2520,9 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         for _, b in ipairs(buttons) do if b.unit and b:IsShown() then UpdateAuras(b) end end
     elseif event == "PLAYER_REGEN_DISABLED" then
         for _, b in ipairs(buttons) do if b.c then UpdateBuffNeeds(b) end end
+        if mover and mover:IsShown() then SetHint("|cffff5555Can't move or resize in combat|r") end
     elseif event == "PLAYER_REGEN_ENABLED" then
+        if mover and mover:IsShown() then SetHint(DEFAULT_HINT) end
         local list = pending
         pending = {}
         for _, f in ipairs(list) do f() end
