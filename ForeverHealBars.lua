@@ -193,6 +193,7 @@ end
 
 local BuildDispelFx                   -- defined with the dispel effect below
 local BuildAuraBoxes                  -- the game-drawn dispel glow and HoT icons, below
+local MakeDebuffBox
 
 local function Build(btn)
     -- everything visual lives on a plain child frame, so fading it for range
@@ -521,6 +522,72 @@ local function InitDispelButton(btn, c)
     btn.fhbGlow = holder
 end
 
+-- Debuffs never worth a slot, by name. The game only filters by spell ID,
+-- so each one's ID is read off your own debuffs out of combat, saved, and
+-- left out from then on (in combat too).
+local IGNORED_DEBUFFS = { ["Boosted Rest"] = true }    -- Camp Tent rest bonus
+
+-- every debuff on the player, dispellable or not: small icons, bottom left
+MakeDebuffBox = function(c)
+    local box = NewAuraBox(c, "BOTTOMLEFT", Flow and Flow.Right)
+    local exclude = {}
+    for id in pairs(DB and DB.ignoredDebuffIDs or {}) do exclude[id] = true end
+    local function group(filters)
+        return pcall(box.AddAuraGroup, box, "debuffs", "HARMFUL", {
+            maxFrameCount = MAX_DEBUFF_ICONS,
+            templateNames = { "ForeverHealBarsHotTemplate" },
+            initializeFrame = function(b)
+                pcall(b.SetIcon, b, b.Icon)
+                b:EnableMouse(false)
+            end,
+            candidateFilters = filters,
+            layout = { elementSpacing = 1 },
+        })
+    end
+    -- (if the game ever refuses the exclusion, still show the debuffs)
+    if box and not (next(exclude) and group({ excludeSpellIDs = exclude })) and not group(nil) then
+        box:Hide()
+        box = nil
+    end
+    if box then
+        box:ClearAllPoints()
+        box:SetPoint("BOTTOMLEFT", c, "BOTTOMLEFT", 2, 2 + POWER_H)      -- clear of the mana bar
+        pcall(box.SetFrameLevel, box, c.hp:GetFrameLevel() + 3)
+    end
+    return box
+end
+
+-- out of combat: look for ignored debuffs on a unit; learning a new ID swaps
+-- every frame's debuff row for one that leaves it out
+local function LearnIgnoredDebuffs(u)
+    if InCombatLockdown() or not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return end
+    local learned = false
+    pcall(function()
+        for i = 1, 40 do
+            local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HARMFUL")
+            if not a then break end
+            local name, id = a.name, a.spellId
+            if Readable(name) and Readable(id) and IGNORED_DEBUFFS[name] then
+                DB.ignoredDebuffIDs = DB.ignoredDebuffIDs or {}
+                if not DB.ignoredDebuffIDs[id] then
+                    DB.ignoredDebuffIDs[id] = true
+                    learned = true
+                end
+            end
+        end
+    end)
+    if not learned then return end
+    for _, b in ipairs(buttons) do
+        local c = b.c
+        if c and c.debuffBox then
+            pcall(c.debuffBox.SetUnit, c.debuffBox, "none")
+            c.debuffBox:Hide()
+            c.debuffBox = MakeDebuffBox(c)
+            if c.debuffBox and b.unit then pcall(c.debuffBox.SetUnit, c.debuffBox, b.unit) end
+        end
+    end
+end
+
 BuildAuraBoxes = function(btn)
     local c = btn.c
     if not Flow then return end
@@ -541,21 +608,7 @@ BuildAuraBoxes = function(btn)
         candidateFilters = { maxDuration = HOT_MAX_SECONDS },
         layout = { elementSpacing = 1 },
     }) then hots:Hide(); hots = nil end
-    -- every debuff on the player, dispellable or not: small icons, bottom left
-    local debuffs = NewAuraBox(c, "BOTTOMLEFT", Flow and Flow.Right)
-    if debuffs and not pcall(debuffs.AddAuraGroup, debuffs, "debuffs", "HARMFUL", {
-        maxFrameCount = MAX_DEBUFF_ICONS,
-        templateNames = { "ForeverHealBarsHotTemplate" },
-        initializeFrame = function(b)
-            pcall(b.SetIcon, b, b.Icon)
-            b:EnableMouse(false)
-        end,
-        layout = { elementSpacing = 1 },
-    }) then debuffs:Hide(); debuffs = nil end
-    if debuffs then
-        debuffs:ClearAllPoints()
-        debuffs:SetPoint("BOTTOMLEFT", c, "BOTTOMLEFT", 2, 2 + POWER_H)      -- clear of the mana bar
-    end
+    local debuffs = MakeDebuffBox(c)
     for _, box in ipairs({ dispel, hots, debuffs }) do
         pcall(box.SetFrameLevel, box, c.hp:GetFrameLevel() + 3)
         pcall(box.SetUnit, box, "none")
@@ -1351,6 +1404,7 @@ local function UpdateAuras(btn)
     if not u or not UnitExists(u) then return end
     if not InCombatLockdown() and C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
         pcall(SeedAuras, u)                     -- keep the tracked list exact while we can
+        LearnIgnoredDebuffs(u)
     end
     UpdateHots(btn)
     local fn = (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) and UpdateAurasModern or UpdateAurasLegacy
