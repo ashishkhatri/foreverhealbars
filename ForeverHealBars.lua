@@ -12,6 +12,7 @@ local fontSize, nameLift = FONT_BASE, 6   -- current name size; how far the name
 local MAX_BUTTONS = 40
 local OOR_DIM = 0.65                  -- darkness of the overlay on out-of-range players
 local HOT_SIZE, MAX_HOTS = 11, 3
+local DISPEL_EDGE = 3                  -- thick, steady border in the debuff colour (the wash breathes)
 local ROLE_SIZE = 11
 local NEED_SIZE = 12
 local INC_EASE = Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
@@ -444,7 +445,7 @@ BuildDispelFx = function(btn)
     a:SetDuration(1.25)          -- slow breathing, ~2.5s per cycle
     a:SetSmoothing("IN_OUT")
 
-    local outline = Border(fx, 0, 1)
+    local outline = Border(fx, 0, DISPEL_EDGE)
 
     c.dispel = {}
     function c.dispel:Set(r, g, b)
@@ -502,10 +503,10 @@ local function InitDispelButton(btn, c)
     wash:SetTexture(BAR)
     local edges = {}
     for i = 1, 4 do edges[i] = holder:CreateTexture(nil, "OVERLAY") end
-    edges[1]:SetPoint("TOPLEFT"); edges[1]:SetPoint("TOPRIGHT"); edges[1]:SetHeight(1)
-    edges[2]:SetPoint("BOTTOMLEFT"); edges[2]:SetPoint("BOTTOMRIGHT"); edges[2]:SetHeight(1)
-    edges[3]:SetPoint("TOPLEFT"); edges[3]:SetPoint("BOTTOMLEFT"); edges[3]:SetWidth(1)
-    edges[4]:SetPoint("TOPRIGHT"); edges[4]:SetPoint("BOTTOMRIGHT"); edges[4]:SetWidth(1)
+    edges[1]:SetPoint("TOPLEFT"); edges[1]:SetPoint("TOPRIGHT"); edges[1]:SetHeight(DISPEL_EDGE)
+    edges[2]:SetPoint("BOTTOMLEFT"); edges[2]:SetPoint("BOTTOMRIGHT"); edges[2]:SetHeight(DISPEL_EDGE)
+    edges[3]:SetPoint("TOPLEFT"); edges[3]:SetPoint("BOTTOMLEFT"); edges[3]:SetWidth(DISPEL_EDGE)
+    edges[4]:SetPoint("TOPRIGHT"); edges[4]:SetPoint("BOTTOMRIGHT"); edges[4]:SetWidth(DISPEL_EDGE)
     for _, t in ipairs({ wash, unpack(edges) }) do
         if t ~= wash then t:SetTexture(BAR) end
         pcall(btn.AddDispelTypeTexture, btn, t, { style = DISPEL_TINT and DISPEL_TINT.PreserveAsset })
