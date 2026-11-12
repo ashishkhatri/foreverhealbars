@@ -2593,7 +2593,9 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
                     if i == 1 then Msg("  no debuffs found") end
                     break
                 end
-                Msg("  %d. %s  type=%s  id=%s", i, show(a.name), show(a.dispelName), show(a.spellId))
+                Msg("  %d. %s  type=%s  id=%s  lasts=%s  left=%s", i, show(a.name), show(a.dispelName), show(a.spellId),
+                    show(a.duration), (Readable(a.expirationTime) and a.expirationTime > 0)
+                        and string.format("%.0f", a.expirationTime - GetTime()) or show(a.expirationTime))
             end
         end)
         if not okList then Msg("  full debuff list: refused") end
