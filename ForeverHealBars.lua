@@ -2422,7 +2422,10 @@ local function CreateConfig()
     book:SetPoint("RIGHT", reset, "LEFT", -8, 0)
     book:SetText("|TInterface\\Icons\\INV_Misc_Book_09:14:14:0:0:64:64:5:59:5:59|t  Spellbook")
     if secure then
-        book:RegisterForClicks("AnyUp", "AnyDown")
+        -- up only: registered for both, one click fired twice and the
+        -- spellbook opened and shut again straight away
+        book:RegisterForClicks("AnyUp")
+        book:SetAttribute("useOnKeyDown", false)
         book:SetAttribute("type", "click")
         book:SetAttribute("clickbutton", micro)
     else book:SetScript("OnClick", function()
