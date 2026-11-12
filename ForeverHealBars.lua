@@ -87,6 +87,7 @@ local DEBUFF_COLOR = {
     Poison = { r = 0, g = 0.78, b = 0.59 },     -- teal green
 }
 local AGGRO_COLOR = { 1, 0.08, 0.08 }   -- red outline: has aggro
+local SHIELD_TINT = { 0.59, 0.82, 1 }  -- pale blue under the shield stripes
 local INC_COLOR = { 0.67, 1, 0.47 }              -- bright lime
 
 -- Default click-casting per class. Keys: modifier prefix + mouse button
@@ -299,6 +300,29 @@ local function Build(btn)
     hot:SetFrameLevel(inc:GetFrameLevel())
     hot:Hide()                                -- only shown while a HoT is ticking
     c.hot = hot
+
+    -- Shields, part 2: white stripes on a pale blue tint in the missing
+    -- health, after incoming heals and HoTs, showing how much of what they're
+    -- missing the shield covers. (The strip along the top shows its full
+    -- size, which matters at full health where there's no room here.)
+    -- Two bars with the same value: a tint and the stripes. A status bar
+    -- hides its own fill at zero, so both vanish cleanly with no shield.
+    local function AbsorbBar(texture, r, g, b, a)
+        local bar = CreateFrame("StatusBar", nil, c)
+        bar:SetStatusBarTexture(texture)
+        bar:SetStatusBarColor(r, g, b, a)
+        bar:SetWidth(W)
+        bar:SetMinMaxValues(0, 1)
+        bar:SetValue(0)
+        bar:SetFrameLevel(hot:GetFrameLevel())
+        return bar
+    end
+    c.absorbTint = AbsorbBar(BAR, SHIELD_TINT[1], SHIELD_TINT[2], SHIELD_TINT[3], 0.35)
+    c.absorbStripes = AbsorbBar(string.format("Interface\\AddOns\\%s\\media\\stripes", ADDON), 1, 1, 1, 0.8)
+    local fill = c.absorbStripes:GetStatusBarTexture()
+    fill:SetTexture(string.format("Interface\\AddOns\\%s\\media\\stripes", ADDON), "REPEAT", "REPEAT")
+    fill:SetHorizTile(true)
+    fill:SetVertTile(true)
 
     -- Shields: a thin white bar along the top of the frame, its width the
     -- absorb remaining (the game hands that over as a finished number, so it
@@ -662,12 +686,26 @@ end
 -- An empty status bar keeps its fill texture full width (just hidden), so the
 -- HoT segment may only follow the cast-heal fill while a heal is incoming;
 -- otherwise it would start past the frame's edge and be clipped away.
+-- the shield stripes go after whatever is showing last: HoTs, else incoming
+-- heals, else the health itself
+local function PlaceAbsorb(btn)
+    local c = btn.c
+    local last = (c.hot:IsShown() and c.hot) or (btn.incActive and c.inc) or c.hp
+    local edge = last:GetStatusBarTexture()
+    for _, bar in ipairs({ c.absorbTint, c.absorbStripes }) do
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPLEFT", edge, "TOPRIGHT")
+        bar:SetPoint("BOTTOMLEFT", edge, "BOTTOMRIGHT")
+    end
+end
+
 local function PlaceHot(btn, afterIncoming)
     local c = btn.c
     local edge = (afterIncoming and c.inc or c.hp):GetStatusBarTexture()
     c.hot:ClearAllPoints()
     c.hot:SetPoint("TOPLEFT", edge, "TOPRIGHT")
     c.hot:SetPoint("BOTTOMLEFT", edge, "BOTTOMRIGHT")
+    PlaceAbsorb(btn)
 end
 
 local function UpdateHealth(btn)
@@ -680,6 +718,7 @@ local function UpdateHealth(btn)
     c.hot:SetMinMaxValues(0, max)
     c.hot:SetValue(btn.hotAmount or 0)
     c.hot:SetShown((btn.hotAmount or 0) > 0)
+    PlaceAbsorb(btn)
     local incoming = UnitGetIncomingHeals and UnitGetIncomingHeals(u)
     -- the game returns nothing when no heals are coming
     if incoming then
@@ -1325,6 +1364,7 @@ local function UpdateHots(btn)
     btn.hotAmount = ok and amount or 0
     btn.c.hot:SetValue(btn.hotAmount)
     btn.c.hot:SetShown(btn.hotAmount > 0)
+    PlaceAbsorb(btn)
 end
 
 ---------------------------------------------------------------------------
@@ -1480,8 +1520,11 @@ local function UpdateShield(btn)
     local u = btn.unit
     if not u or not UnitExists(u) or not UnitGetTotalAbsorbs then return end
     pcall(function()
-        btn.c.shield:SetMinMaxValues(0, UnitHealthMax(u))
-        btn.c.shield:SetValue(UnitGetTotalAbsorbs(u))
+        local max, absorb = UnitHealthMax(u), UnitGetTotalAbsorbs(u)
+        for _, bar in ipairs({ btn.c.shield, btn.c.absorbTint, btn.c.absorbStripes }) do
+            bar:SetMinMaxValues(0, max)
+            bar:SetValue(absorb)
+        end
     end)
 end
 
@@ -1907,6 +1950,8 @@ local function ApplySize(w, h)
         b.c.name:SetWidth(bw - 6)
         b.c.inc:SetWidth(bw)
         b.c.hot:SetWidth(bw)
+        b.c.absorbTint:SetWidth(bw)
+        b.c.absorbStripes:SetWidth(bw)
         b.c.powerCost:SetWidth(bw)
         ApplyFonts(b)
         ApplyIcons(b)
