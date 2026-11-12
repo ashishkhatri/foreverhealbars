@@ -2151,7 +2151,21 @@ local function CreateConfig()
     f:SetScript("OnDragStart", f.StartMoving)
     f:SetScript("OnDragStop", f.StopMovingOrSizing)
     f:SetClampedToScreen(true)
-    tinsert(UISpecialFrames, f:GetName())   -- Escape closes it
+    -- Escape closes it. (Not through the game's Escape list: opening the
+    -- spellbook closes every window on that list, and this one has to stay
+    -- open while you drag spells across.) Other keys pass through as usual.
+    if not InCombatLockdown() then
+        f:EnableKeyboard(true)
+        f:SetPropagateKeyboardInput(true)
+        f:SetScript("OnKeyDown", function(self, key)
+            if key ~= "ESCAPE" then return end
+            if not InCombatLockdown() then self:SetPropagateKeyboardInput(false) end
+            self:Hide()
+            if not InCombatLockdown() then
+                C_Timer.After(0, function() if not InCombatLockdown() then self:SetPropagateKeyboardInput(true) end end)
+            end
+        end)
+    end
     -- the template's close button goes through HideUIPanel, which the game
     -- blocks in combat; just hide the window instead
     local close = f.CloseButton or _G[f:GetName() .. "CloseButton"]
