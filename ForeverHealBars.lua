@@ -347,16 +347,17 @@ local function Build(btn)
     status:SetTextColor(0.85, 0.85, 0.85)
     c.status = status
 
-    -- role: a small tank / healer / damage icon in the top-left corner
+    -- role: a small tank / healer / damage icon in the bottom-right corner
+    -- (kept off the top edge, where the shield bar runs; clear of the mana bar)
     local role = text:CreateTexture(nil, "OVERLAY")
     role:SetSize(ROLE_SIZE, ROLE_SIZE)
-    role:SetPoint("TOPLEFT", 2, -2)
+    role:SetPoint("BOTTOMRIGHT", -2, 2 + POWER_H)
     role:Hide()
     c.role = role
 
-    -- buffs this player needs from you: icons flashing after the role icon
+    -- buffs this player needs from you: icons flashing beside the role icon
     local need = CreateFrame("Frame", nil, text)
-    need:SetPoint("TOPLEFT", ROLE_SIZE + 4, -2)
+    need:SetPoint("BOTTOMRIGHT", -(ROLE_SIZE + 4), 2 + POWER_H)
     need:SetSize((NEED_SIZE + 1) * 3, NEED_SIZE)
     need:Hide()
     c.need = need
@@ -364,7 +365,7 @@ local function Build(btn)
     for i = 1, 3 do
         local t = need:CreateTexture(nil, "OVERLAY")
         t:SetSize(NEED_SIZE, NEED_SIZE)
-        t:SetPoint("TOPLEFT", (i - 1) * (NEED_SIZE + 1), 0)
+        t:SetPoint("BOTTOMRIGHT", -(i - 1) * (NEED_SIZE + 1), 0)
         t:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         t:Hide()
         c.needIcons[i] = t
