@@ -527,6 +527,11 @@ end
 -- left out from then on (in combat too).
 local IGNORED_DEBUFFS = { ["Boosted Rest"] = true }    -- Camp Tent rest bonus
 local debuffRowMode = "not built"                      -- for /fhb debug
+-- The game accepts a spell ID exclusion for debuffs but doesn't apply it, so
+-- long effects are also left out by length: anything over 30 minutes (the
+-- hour-long Boosted Rest, lockouts). Fight debuffs are far shorter, and
+-- Resurrection Sickness (10 minutes) still shows.
+local DEBUFF_MAX_SECONDS = 1800
 
 -- every debuff on the player, dispellable or not: small icons, bottom left
 MakeDebuffBox = function(c)
@@ -547,19 +552,18 @@ MakeDebuffBox = function(c)
     end
     -- (if the game ever refuses the exclusion, still show the debuffs)
     debuffRowMode = "no exclusions"
-    if box and next(exclude) then
-        local ok, err = group({ excludeSpellIDs = exclude })
+    if box then
+        local filters = { maxDuration = DEBUFF_MAX_SECONDS }
+        if next(exclude) then filters.excludeSpellIDs = exclude end
+        local ok, err = group(filters)
         if ok then
-            debuffRowMode = "excluding learned IDs"
+            debuffRowMode = "up to 30 min long" .. (next(exclude) and ", excluding learned IDs" or "")
         else
-            debuffRowMode = "exclusion refused: " .. tostring(err)
+            debuffRowMode = "filters refused: " .. tostring(err)
             box:Hide()
             box = NewAuraBox(c, "BOTTOMLEFT", Flow and Flow.Right)
             if box and not group(nil) then box:Hide(); box = nil end
         end
-    elseif box and not group(nil) then
-        box:Hide()
-        box = nil
     end
     if box then
         box:ClearAllPoints()
