@@ -527,6 +527,7 @@ end
 -- so each one's ID is read off your own debuffs out of combat, saved, and
 -- left out from then on (in combat too).
 local IGNORED_DEBUFFS = { ["Boosted Rest"] = true }    -- Camp Tent rest bonus
+local ApplyIconsRef                                    -- set once icon sizing is defined below
 local debuffRowMode = "not built"                      -- for /fhb debug
 -- The game accepts a spell ID exclusion for debuffs but doesn't apply it, so
 -- long effects are also left out by length: anything over 30 minutes (the
@@ -601,6 +602,7 @@ local function LearnIgnoredDebuffs(u)
             c.debuffBox:Hide()
             c.debuffBox = MakeDebuffBox(c)
             if c.debuffBox and b.unit then pcall(c.debuffBox.SetUnit, c.debuffBox, b.unit) end
+            if ApplyIconsRef then ApplyIconsRef(b) end
         end
     end
 end
@@ -1851,11 +1853,53 @@ local function ApplyFonts(b)
     b.c.status:SetPoint("CENTER", 0, -math.floor(size * 0.8 + 0.5))
 end
 
+-- Corner icons (HoTs, debuffs, role, Buffwatch) grow with the frames too:
+-- 11 px at the default size and never smaller, up to 22 px.
+local ICON_BASE, ICON_MIN, ICON_MAX = 11, 11, 22
+local iconSize = ICON_BASE
+local function IconFor(w, h)
+    local f = math.min(w / W, h / H)
+    return math.max(ICON_MIN, math.min(ICON_MAX, math.floor(ICON_BASE * f + 0.5)))
+end
+
+local function ApplyIcons(b)
+    local c = b.c
+    local s = b.isPet and math.min(iconSize, IconFor(b:GetWidth(), b:GetHeight())) or iconSize
+    c.role:SetSize(s, s)
+    local ns = s + 1                                -- Buffwatch icons, a touch bigger
+    c.need:ClearAllPoints()
+    c.need:SetPoint("BOTTOMRIGHT", -(s + 4), 2 + POWER_H)
+    c.need:SetSize((ns + 1) * 3, ns)
+    for i, t in ipairs(c.needIcons) do
+        t:SetSize(ns, ns)
+        t:ClearAllPoints()
+        t:SetPoint("BOTTOMRIGHT", -(i - 1) * (ns + 1), 0)
+    end
+    for i, t in ipairs(c.hots) do
+        t:SetSize(s, s)
+        t:ClearAllPoints()
+        t:SetPoint("TOPRIGHT", -2 - (i - 1) * (s + 1), -2)
+    end
+    -- the game-drawn rows are scaled as a whole (offsets kept in screen pixels)
+    local sc = s / ICON_BASE
+    for _, spec in ipairs({ { c.hotBox, "TOPRIGHT", -2, -2 }, { c.debuffBox, "BOTTOMLEFT", 2, 2 + POWER_H } }) do
+        local box = spec[1]
+        if box then
+            box:SetScale(sc)
+            box:ClearAllPoints()
+            box:SetPoint(spec[2], c, spec[2], spec[3] / sc, spec[4] / sc)
+        end
+    end
+end
+
+ApplyIconsRef = ApplyIcons
+
 local function ApplySize(w, h)
     w = math.max(MIN_W, math.min(MAX_W, math.floor(w + 0.5)))
     h = math.max(MIN_H, math.min(MAX_H, math.floor(h + 0.5)))
     DB.w, DB.h = w, h
     fontSize = FontFor(w, h)
+    iconSize = IconFor(w, h)
     nameLift = math.floor(fontSize * 0.6 + 0.5)
     for _, b in ipairs(buttons) do
         local bw = b.isPet and PetWidth(w) or w
@@ -1865,6 +1909,7 @@ local function ApplySize(w, h)
         b.c.hot:SetWidth(bw)
         b.c.powerCost:SetWidth(bw)
         ApplyFonts(b)
+        ApplyIcons(b)
         -- short frames: name only, centred; tall enough: name above missing health
         b.roomy = h >= math.max(34, fontSize * 2 + 14)
         b.c.status:SetShown(b.roomy)
