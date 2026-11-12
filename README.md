@@ -32,7 +32,7 @@ Blizzard's own party and raid frames are hidden by default (the raid tools tab o
 
 ## Click-casting
 
-`/fhb` (or the gear next to the padlock) opens a window with a box for each click: left, right, middle, mouse 4, mouse 5, wheel up and wheel down, plain or with Shift, Ctrl or Alt. Drag a spell from your spellbook (the **Spellbook** button opens it) onto one of the squares: there's one for each click, plain or with Shift, Ctrl or Alt. Drag a square onto another to move it (the two swap). Right-click a square to clear it, or right-click an empty one to set it to Target or Menu. The spell's icon appears next to the box, and the text turns red if the spell isn't in your spellbook.
+`/fhb` (or the gear next to the padlock) opens a window with a box for each click: left, right, middle, mouse 4, mouse 5, wheel up and wheel down, plain or with Shift, Ctrl or Alt. Drag a spell from your spellbook onto one of the squares: there's one for each click, plain or with Shift, Ctrl or Alt. Drag a square onto another to move it (the two swap). Right-click a square to clear it, or right-click an empty one to set it to Target or Menu. The spell's icon appears next to the box, and the text turns red if the spell isn't in your spellbook.
 
 - Any plain left or right click with nothing bound targets the player or opens their menu.
 - **Click to rez:** a plain left click on a dead player casts your resurrection spell (Resurrection, Redemption, Ancestral Spirit, or Rebirth for druids); on anyone alive it does whatever left click is set to. Works in combat.

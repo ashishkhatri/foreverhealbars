@@ -2394,52 +2394,7 @@ local function CreateConfig()
         if not ApplyBindingsAll() then Msg("bindings will update after combat.") end
     end)
 
-    -- Opening the spellbook from addon code makes it build itself as the
-    -- addon's work, and it then can't show its own cooldowns (taint errors).
-    -- So this is a secure button that clicks the game's own spellbook button,
-    -- exactly as if you had clicked it yourself.
-    -- It isn't a child of the window: a window holding a secure button
-    -- can't be closed during combat. It sits on top of the window instead,
-    -- follows it out of combat, and steps aside when combat starts.
-    local micro = _G.SpellbookMicroButton or _G.PlayerSpellsMicroButton
-    local secure = micro and not InCombatLockdown()
-    local book = CreateFrame("Button", nil, secure and UIParent or f,
-        secure and "SecureActionButtonTemplate, UIPanelButtonTemplate" or "UIPanelButtonTemplate")
-    if secure then
-        book:SetFrameStrata(f:GetFrameStrata())
-        book:SetFrameLevel(f:GetFrameLevel() + 20)
-        book:Hide()
-        f:HookScript("OnShow", function() if not InCombatLockdown() then book:Show() end end)
-        f:HookScript("OnHide", function() if not InCombatLockdown() then book:Hide() end end)
-        local watch = CreateFrame("Frame")
-        watch:RegisterEvent("PLAYER_REGEN_DISABLED")    -- fires just before combat locks secure frames
-        watch:RegisterEvent("PLAYER_REGEN_ENABLED")
-        watch:SetScript("OnEvent", function(_, event)
-            if event == "PLAYER_REGEN_DISABLED" then book:Hide() else book:SetShown(f:IsShown()) end
-        end)
-    end
-    book:SetSize(110, 22)
-    book:SetPoint("RIGHT", reset, "LEFT", -8, 0)
-    book:SetText("|TInterface\\Icons\\INV_Misc_Book_09:14:14:0:0:64:64:5:59:5:59|t  Spellbook")
-    if secure then
-        -- up only: registered for both, one click fired twice and the
-        -- spellbook opened and shut again straight away
-        book:RegisterForClicks("AnyUp")
-        book:SetAttribute("useOnKeyDown", false)
-        book:SetAttribute("type", "click")
-        book:SetAttribute("clickbutton", micro)
-    else book:SetScript("OnClick", function()
-        if InCombatLockdown() then Msg("the spellbook can't be opened during combat.") return end
-        if ToggleSpellBook then
-            ToggleSpellBook(BOOKTYPE_SPELL or "spell")
-        elseif PlayerSpellsUtil and PlayerSpellsUtil.ToggleSpellBookFrame then
-            PlayerSpellsUtil.ToggleSpellBookFrame()
-        elseif SpellBookFrame then
-            ToggleFrame(SpellBookFrame)
-        end
-    end) end
 
-    -- (a hook, not SetScript: SetScript would drop the Spellbook button's hook above)
     f:HookScript("OnShow", function(self)
         for _, e in ipairs(self.boxes) do e:Refresh() end
         self.hideBlizz:SetChecked(DB.hideBlizzard)
