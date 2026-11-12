@@ -526,6 +526,7 @@ end
 -- so each one's ID is read off your own debuffs out of combat, saved, and
 -- left out from then on (in combat too).
 local IGNORED_DEBUFFS = { ["Boosted Rest"] = true }    -- Camp Tent rest bonus
+local debuffRowMode = "not built"                      -- for /fhb debug
 
 -- every debuff on the player, dispellable or not: small icons, bottom left
 MakeDebuffBox = function(c)
@@ -545,7 +546,18 @@ MakeDebuffBox = function(c)
         })
     end
     -- (if the game ever refuses the exclusion, still show the debuffs)
-    if box and not (next(exclude) and group({ excludeSpellIDs = exclude })) and not group(nil) then
+    debuffRowMode = "no exclusions"
+    if box and next(exclude) then
+        local ok, err = group({ excludeSpellIDs = exclude })
+        if ok then
+            debuffRowMode = "excluding learned IDs"
+        else
+            debuffRowMode = "exclusion refused: " .. tostring(err)
+            box:Hide()
+            box = NewAuraBox(c, "BOTTOMLEFT", Flow and Flow.Right)
+            if box and not group(nil) then box:Hide(); box = nil end
+        end
+    elseif box and not group(nil) then
         box:Hide()
         box = nil
     end
@@ -2592,10 +2604,14 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
                     if i == 1 then Msg("  no debuffs found") end
                     break
                 end
-                Msg("  %d. %s  type=%s", i, show(a.name), show(a.dispelName))
+                Msg("  %d. %s  type=%s  id=%s", i, show(a.name), show(a.dispelName), show(a.spellId))
             end
         end)
         if not okList then Msg("  full debuff list: refused") end
+        local ids = {}
+        for id in pairs(DB.ignoredDebuffIDs or {}) do ids[#ids + 1] = tostring(id) end
+        Msg("  hidden debuff IDs learned: %s  |  debuff icons: %s",
+            #ids > 0 and table.concat(ids, ", ") or "none", debuffRowMode)
         -- the tracked-ID route, per frame showing this player
         local isOut = C_UnitAuras.IsAuraFilteredOutByInstanceID
         Msg("  ID readers: by ID=%s  filter check=%s  ID list=%s",
