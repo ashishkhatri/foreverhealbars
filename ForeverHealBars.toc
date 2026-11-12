@@ -3,7 +3,7 @@
 ## IconTexture: Interface\AddOns\ForeverHealBars\media\icon
 ## Notes: Minimalist grid raid frames for healers: click-casting, HoTs, dispels, incoming heals, shields, pets, roles, range and aggro.
 ## Author: ashishkhatri
-## Version: 0.12.0
+## Version: 0.12.1
 ## X-License: MIT
 ## X-Website: https://github.com/ashishkhatri/foreverhealbars
 ## X-Curse-Project-ID: 1797248
