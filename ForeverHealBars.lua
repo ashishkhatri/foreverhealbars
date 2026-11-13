@@ -682,15 +682,27 @@ do
         local fx = CreateFrame("Frame", nil, parent)
         fx:SetAllPoints(c)
         fx:SetFrameLevel(level)
-        local function strip(a1, a2)
+        -- each strip is wider than any frame and slides by one stripe period
+        -- in a loop (the frame body cuts off what's outside); done with the
+        -- game's own animations, so nothing has to touch the frame afterwards
+        local span = 64 * STRIPE_H / 16               -- one copy of the texture, in pixels
+        local LONG = 480
+        local function strip(point, dir)
             local t = fx:CreateTexture(nil, "OVERLAY")
             t:SetTexture(HAZARD, "REPEAT", "CLAMP")
-            t:SetPoint(a1)
-            t:SetPoint(a2)
-            t:SetHeight(STRIPE_H)
+            t:SetSize(LONG + span, STRIPE_H)
+            t:SetPoint(point, dir < 0 and 0 or -span, 0)
+            t:SetTexCoord(0, (LONG + span) / span, 0, 1)
+            local ag = t:CreateAnimationGroup()
+            ag:SetLooping("REPEAT")
+            local tr = ag:CreateAnimation("Translation")
+            tr:SetOffset(dir * span, 0)
+            tr:SetDuration(2)
+            ag:Play()
             return t
         end
-        local top, bottom = strip("TOPLEFT", "TOPRIGHT"), strip("BOTTOMLEFT", "BOTTOMRIGHT")
+        strip("TOPLEFT", -1)
+        strip("BOTTOMLEFT", 1)
         local tagBg = fx:CreateTexture(nil, "ARTWORK")
         tagBg:SetColorTexture(0.08, 0.07, 0.05, 0.9)
         local tag = fx:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -698,15 +710,6 @@ do
         tag:SetTextColor(TREMOR_TEXT[1], TREMOR_TEXT[2], TREMOR_TEXT[3])
         tagBg:SetPoint("TOPLEFT", tag, "TOPLEFT", -3, 1)
         tagBg:SetPoint("BOTTOMRIGHT", tag, "BOTTOMRIGHT", 3, -1)
-        fx.off = 0
-        fx:SetScript("OnUpdate", function(self, elapsed)
-            if self.gated then self:SetAlpha(DB.tremorBoxOK and 1 or 0) end
-            self.off = (self.off + elapsed * 0.5) % 1
-            local span = 64 * STRIPE_H / 16           -- one copy of the texture, in pixels
-            local reach = (self:GetWidth() or 0) / span
-            top:SetTexCoord(self.off, self.off + reach, 0, 1)
-            bottom:SetTexCoord(-self.off, -self.off + reach, 0, 1)   -- the other way
-        end)
         function fx:SetKind(kind)
             tag:SetText(TREMOR_KINDS[kind] and TREMOR_KINDS[kind].tag or "TREMOR")
         end
@@ -715,9 +718,16 @@ do
     end
 
     -- one of the game's aura frames per kind, each limited to that kind's spells
+    -- The game's buttons, and anything placed on them, can't be asked anything
+    -- by an addon. So each set of stripes reports for itself as it appears and
+    -- disappears, into a plain table: c.tremorSeen[kind][stripes] = true.
     Tremor.MakeBoxes = function(c)
         local boxes = {}
+        c.tremorSeen = {}
+        local visible = DB.tremorBoxOK == true   -- built invisible until the list is proven
         for kind, k in pairs(TREMOR_KINDS) do
+            local seen = {}
+            c.tremorSeen[kind] = seen
             local box = NewAuraBox(c, "CENTER", Flow and Flow.Right)
             if box and pcall(box.AddAuraGroup, box, "tremor-" .. kind, "HARMFUL", {
                 maxFrameCount = 1,
@@ -726,11 +736,14 @@ do
                     pcall(b.SetIcon, b, b.Icon)
                     b:EnableMouse(false)
                     if not b.fhbTremor then
-                        b.fhbTremor = BuildTremorFx(b, c, c.hp:GetFrameLevel() + 5)
-                        b.fhbTremor.gated = true          -- invisible until the game's filter is proven
+                        local fx = BuildTremorFx(b, c, c.hp:GetFrameLevel() + 5)
+                        fx:SetAlpha(visible and 1 or 0)
+                        fx:SetKind(kind)
+                        fx:SetScript("OnShow", function() seen[fx] = true end)
+                        fx:SetScript("OnHide", function() seen[fx] = nil end)
+                        b.fhbTremor = fx
                     end
-                    b.fhbTremor:SetKind(kind)
-                b.fhbKind = kind
+                    seen[b.fhbTremor] = true              -- being set up = about to show
                 end,
                 candidateFilters = { includeSpellIDs = k.idset },
             }) then
@@ -746,12 +759,8 @@ do
 
     -- is one of the game's tremor frames on this unit frame showing right now?
     local function TremorBoxShowing(c)
-        for _, box in ipairs(c.tremorBoxes or {}) do
-            for _, child in ipairs({ box:GetChildren() }) do
-                -- (the game's buttons can't be asked; our stripes on them can:
-            -- they're visible exactly while their button is)
-            if child.fhbTremor and child.fhbTremor:IsVisible() then return true end
-            end
+        for _, seen in pairs(c.tremorSeen or {}) do
+            if next(seen) then return true end
         end
         return false
     end
@@ -793,6 +802,7 @@ do
             elseif verdict == "good" and btn.tremorVotes >= 3 then
                 DB.tremorBoxOK = true
                 Tremor.probe = "the game applies the spell list (works in combat)"
+                Tremor.Rebuild()
             end
         end
         if DB.tremorBoxOK == false then
@@ -807,15 +817,29 @@ do
         end
     end
     Tremor.Read = ReadTremor
-    -- for /fhb debug: which of the game's fear / sleep / charm frames are lit
-    Tremor.Lit = function(c)
-        local lit, built = {}, #(c.tremorBoxes or {})
-        for _, box in ipairs(c.tremorBoxes or {}) do
-            for _, child in ipairs({ box:GetChildren() }) do
-                if child.fhbTremor and child.fhbTremor:IsVisible() then lit[#lit + 1] = child.fhbKind or "?" end
+    -- swap every frame's game frames for new ones (built visible / hidden per DB)
+    Tremor.Rebuild = function()
+        for _, b in ipairs(buttons) do
+            local c = b.c
+            if c and c.tremorBoxes then
+                for _, box in ipairs(c.tremorBoxes) do
+                    pcall(box.SetUnit, box, "none")
+                    box:Hide()
+                end
+                c.tremorBoxes = (DB.tremorBoxOK ~= false) and Tremor.MakeBoxes(c) or {}
+                for _, box in ipairs(c.tremorBoxes) do
+                    if b.unit then pcall(box.SetUnit, box, b.unit) end
+                end
             end
         end
-        return built, lit
+    end
+    -- for /fhb debug: which of the game's fear / sleep / charm frames are lit
+    Tremor.Lit = function(c)
+        local lit = {}
+        for kind, seen in pairs(c.tremorSeen or {}) do
+            if next(seen) then lit[#lit + 1] = kind end
+        end
+        return #(c.tremorBoxes or {}), lit
     end
 end
 
