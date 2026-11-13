@@ -199,7 +199,6 @@ end
 local BuildDispelFx                   -- defined with the dispel effect below
 local BuildAuraBoxes                  -- the game-drawn dispel glow and HoT icons, below
 local MakeDebuffBox
-local BuildTremorFx                   -- the Tremor Totem stripes, below
 
 local function Build(btn)
     -- everything visual lives on a plain child frame, so fading it for range
@@ -440,8 +439,6 @@ local function Build(btn)
 
     BuildDispelFx(btn)
     BuildAuraBoxes(btn)
-    c.tremor = BuildTremorFx(c, c, c.hp:GetFrameLevel() + 5)
-    c.tremor:Hide()
     -- threat: an outline just outside the frame. It lives on the unit button,
     -- not inside the frame body, which cuts off anything past its edges.
     local aggroF = CreateFrame("Frame", nil, btn)
@@ -638,204 +635,6 @@ local function LearnIgnoredDebuffs(u)
 end
 
 
----------------------------------------------------------------------------
--- Tremor Totem: fear, sleep and charm. Amber and black warning stripes slide
--- along the top and bottom edges, with a FEAR / SLEEP / CHARM tag.
--- The game's own aura frames, each told to look only for known fear, sleep
--- or charm spells, draw the stripes (in combat too). Where those can't be
--- built, the addon reads the debuffs itself (out of combat) and checks for
--- charm.
----------------------------------------------------------------------------
-local Tremor = {}                     -- fear / sleep / charm (Tremor Totem), below
-do
-    local TREMOR_KINDS = {
-        fear = { tag = "FEAR",
-            names = { "Fear", "Psychic Scream", "Howl of Terror", "Intimidating Shout", "Scare Beast",
-                      "Bellowing Roar", "Panic", "Terrify", "Terrifying Screech", "Terrifying Howl",
-                      "Terrifying Roar", "Frightening Shout", "Intimidating Roar" },
-            ids = { 5782, 6213, 6215, 8122, 8124, 10888, 10890, 5484, 17928, 5246, 1513, 14326, 14327,
-                    18431, 19408, 7399, 6605, 12096, 22686, 16508, 19134, 13704, 22884, 15398, 437928 } },
-        sleep = { tag = "SLEEP",
-            names = { "Sleep", "Hibernate", "Wyvern Sting", "Druid's Slumber", "Deep Sleep" },
-            ids = { 700, 1090, 8399, 12098, 2637, 18657, 18658, 19386, 24132, 24133, 8040 } },
-        charm = { tag = "CHARM",
-            names = { "Mind Control", "Seduction", "Dominate Mind", "Domination", "Cause Insanity",
-                      "True Fulfillment", "Gnomish Mind Control Cap" },
-            ids = { 605, 10911, 10912, 6358, 20604, 7645, 14515, 15859, 24327, 785, 13180 } },
-    }
-    local TREMOR_NAME, TREMOR_ID = {}, {}
-    for kind, k in pairs(TREMOR_KINDS) do
-        k.idset = {}
-        for _, n in ipairs(k.names) do TREMOR_NAME[n] = kind end
-        for _, id in ipairs(k.ids) do TREMOR_ID[id] = kind; k.idset[id] = true end
-    end
-    local STRIPE_H = 6
-    local HAZARD = "Interface\\AddOns\\" .. ADDON .. "\\media\\hazard"
-    local TREMOR_TEXT = { 0.84, 0.63, 0.27 }
-
-    -- the stripes and tag, over the unit frame c (parent decides when it shows)
-    BuildTremorFx = function(parent, c, level)
-        local fx = CreateFrame("Frame", nil, parent)
-        fx:SetAllPoints(c)
-        fx:SetFrameLevel(level)
-        -- each strip is wider than any frame and slides by one stripe period
-        -- in a loop (the frame body cuts off what's outside); done with the
-        -- game's own animations, so nothing has to touch the frame afterwards
-        local span = 64 * STRIPE_H / 16               -- one copy of the texture, in pixels
-        local LONG = 480
-        local function strip(point, dir)
-            local t = fx:CreateTexture(nil, "OVERLAY")
-            t:SetTexture(HAZARD, "REPEAT", "CLAMP")
-            t:SetSize(LONG + span, STRIPE_H)
-            t:SetPoint(point, dir < 0 and 0 or -span, 0)
-            t:SetTexCoord(0, (LONG + span) / span, 0, 1)
-            local ag = t:CreateAnimationGroup()
-            ag:SetLooping("REPEAT")
-            local tr = ag:CreateAnimation("Translation")
-            tr:SetOffset(dir * span, 0)
-            tr:SetDuration(2)
-            ag:Play()
-            return t
-        end
-        strip("TOPLEFT", -1)
-        strip("BOTTOMLEFT", 1)
-        local tagBg = fx:CreateTexture(nil, "ARTWORK")
-        tagBg:SetColorTexture(0.08, 0.07, 0.05, 0.9)
-        local tag = fx:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        tag:SetPoint("BOTTOM", 0, STRIPE_H + 2)
-        tag:SetTextColor(TREMOR_TEXT[1], TREMOR_TEXT[2], TREMOR_TEXT[3])
-        tagBg:SetPoint("TOPLEFT", tag, "TOPLEFT", -3, 1)
-        tagBg:SetPoint("BOTTOMRIGHT", tag, "BOTTOMRIGHT", 3, -1)
-        function fx:SetKind(kind)
-            tag:SetText(TREMOR_KINDS[kind] and TREMOR_KINDS[kind].tag or "TREMOR")
-        end
-        fx:SetKind(nil)
-        return fx
-    end
-
-    -- one of the game's aura frames per kind, each limited to that kind's spells
-    -- (The game's buttons, and anything placed on them, can't be asked
-    -- anything or given scripts by an addon, so there's no way to check from
-    -- here what they show. HealKit relies on the same "only these spells"
-    -- list on WoW Forever, so it's trusted.)
-    Tremor.MakeBoxes = function(c)
-        local boxes = {}
-        for kind, k in pairs(TREMOR_KINDS) do
-            local box = NewAuraBox(c, "CENTER", Flow and Flow.Right)
-            local ok, err = false, "couldn't create the game's aura frame"
-            if box then ok, err = pcall(box.AddAuraGroup, box, "tremor-" .. kind, "HARMFUL", {
-                maxFrameCount = 1,
-                templateNames = { "ForeverHealBarsDispelTemplate" },
-                initializeFrame = function(b)
-                    pcall(b.SetIcon, b, b.Icon)
-                    b:EnableMouse(false)
-                    if not b.fhbTremor then
-                        b.fhbTremor = BuildTremorFx(b, c, c.hp:GetFrameLevel() + 5)
-                        b.fhbTremor:SetKind(kind)
-                    end
-                end,
-                candidateFilters = { includeSpellIDs = Tremor.IDs(kind) },
-            }) end
-            if not ok then Tremor.buildError = tostring(err) end
-            if ok then
-                pcall(box.SetFrameLevel, box, c.hp:GetFrameLevel() + 5)
-                pcall(box.SetUnit, box, "none")
-                boxes[#boxes + 1] = box
-            elseif box then
-                box:Hide()
-            end
-        end
-        return boxes
-    end
-
-    -- what the addon can read itself: charm check, then debuff names / IDs
-    -- the spell IDs the game's frames look for: the built-in list plus any
-    -- this addon has learned on WoW Forever (saved)
-    Tremor.IDs = function(kind)
-        local set = {}
-        for id in pairs(TREMOR_KINDS[kind].idset) do set[id] = true end
-        for id in pairs(DB.tremorLearned and DB.tremorLearned[kind] or {}) do set[id] = true end
-        -- /fhb tremortest: also treat Boosted Rest as a sleep, to see whether the
-        -- game's frames honour the list and draw the stripes
-        if DB.tremorTest and kind == "sleep" then set[1229451] = true end
-        return set
-    end
-
-    local learnedNew
-    local function ReadTremor(u)
-        if UnitIsCharmed then
-            local ok, charmed = pcall(UnitIsCharmed, u)
-            if ok and Readable(charmed) and charmed then return "charm", true end
-        end
-        local kind, otherDebuff
-        local ok = pcall(function()
-            for i = 1, 40 do
-                local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HARMFUL")
-                if not a then break end
-                local name, id = a.name, a.spellId
-                local k = (Readable(name) and TREMOR_NAME[name]) or (Readable(id) and TREMOR_ID[id])
-                if k then
-                    kind = kind or k
-                    -- learn this server's ID for it, so the game's frames catch it in combat
-                    if Readable(id) and not TREMOR_ID[id] then
-                        DB.tremorLearned = DB.tremorLearned or {}
-                        DB.tremorLearned[k] = DB.tremorLearned[k] or {}
-                        if not DB.tremorLearned[k][id] then
-                            DB.tremorLearned[k][id] = true
-                            TREMOR_ID[id] = k
-                            learnedNew = true
-                            Msg("learned %s (spell %d) as %s; frames will now show it in combat too.",
-                                tostring(name), id, TREMOR_KINDS[k].tag:lower())
-                        end
-                    end
-                else
-                    otherDebuff = true
-                end
-            end
-        end)
-        return kind, ok, otherDebuff
-    end
-
-    -- swap every frame's game frames for new ones that include learned IDs
-    local function RebuildBoxes()
-        for _, b in ipairs(buttons) do
-            local c = b.c
-            if c and c.tremorBoxes then
-                for _, box in ipairs(c.tremorBoxes) do
-                    pcall(box.SetUnit, box, "none")
-                    box:Hide()
-                end
-                c.tremorBoxes = Tremor.MakeBoxes(c)
-                for _, box in ipairs(c.tremorBoxes) do
-                    if b.unit then pcall(box.SetUnit, box, b.unit) end
-                end
-            end
-        end
-    end
-
-    Tremor.Update = function(btn)
-        local c, u = btn.c, btn.unit
-        if not (c.tremor and u and UnitExists(u)) then return end
-        -- the game's frames cover it whenever they exist (in and out of combat);
-        -- our own stripes are the fallback where they couldn't be built
-        -- read anyway out of combat, to learn this server's spell IDs
-        local read = not InCombatLockdown() and ReadTremor(u) or nil
-        if learnedNew and not InCombatLockdown() then
-            learnedNew = false
-            RebuildBoxes()
-        end
-        local kind = (not c.tremorBoxes or #c.tremorBoxes == 0) and read or nil
-        if kind then
-            c.tremor:SetKind(kind)
-            c.tremor:Show()
-        else
-            c.tremor:Hide()
-        end
-    end
-    Tremor.Read = ReadTremor
-    Tremor.Rebuild = RebuildBoxes
-end
-
 BuildAuraBoxes = function(btn)
     local c = btn.c
     if not Flow then return end
@@ -862,13 +661,11 @@ BuildAuraBoxes = function(btn)
         pcall(box.SetUnit, box, "none")
     end
     c.dispelBox, c.hotBox, c.debuffBox = dispel, hots, debuffs
-    c.tremorBoxes = Tremor.MakeBoxes(c)
 end
 
 -- point the containers at the frame's player (also called in combat)
 local function SetAuraBoxUnit(btn, unit)
     local list = { btn.c.dispelBox, btn.c.hotBox, btn.c.debuffBox }
-    for _, box in ipairs(btn.c.tremorBoxes or {}) do list[#list + 1] = box end
     for _, box in ipairs(list) do
         if box then
             pcall(function()
@@ -1684,7 +1481,6 @@ local function UpdateAuras(btn)
         btn.c.dispel:Set(nil)
     end
     UpdateBuffNeeds(btn)
-    pcall(Tremor.Update, btn)
 end
 
 -- Threat: 0 none, 1 high threat, 2-3 has aggro. Used directly as the outline's
@@ -2814,6 +2610,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if DB.hideBlizzard == nil then DB.hideBlizzard = true end
         if DB.showPower == nil then DB.showPower = false end
         if DB.pets == nil then DB.pets = true end
+        DB.tremorBoxOK, DB.tremorLearned, DB.tremorTest = nil, nil, nil   -- (removed feature)
         -- Buffwatch is off until you turn it on (the old setting, on by default, is dropped)
         DB.buffReminders = nil
         if DB.buffwatch == nil then DB.buffwatch = false end
@@ -2941,16 +2738,6 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         if not okList then Msg("  full debuff list: refused") end
         local ids = {}
         for id in pairs(DB.ignoredDebuffIDs or {}) do ids[#ids + 1] = tostring(id) end
-        local built = "no frame for this player"
-        for _, b in ipairs(buttons) do
-            local fu = b.unit
-            if fu and b:IsShown() and b.c and ((fu == u) or select(2, pcall(UnitIsUnit, fu, u)) == true) then
-                built = tostring(#(b.c.tremorBoxes or {})) .. " of 3"
-            end
-        end
-        Msg("  tremor (fear/sleep/charm) read directly: %s  |  game frames watching for it: %s%s",
-            tostring((Tremor.Read(u))), built,
-            Tremor.buildError and ("  |  setup error: " .. Tremor.buildError) or "")
         Msg("  hidden debuff IDs learned: %s  |  debuff icons: %s",
             #ids > 0 and table.concat(ids, ", ") or "none", debuffRowMode)
         -- the tracked-ID route, per frame showing this player
@@ -3023,11 +2810,6 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
             end
         end)
         if not okAll then Msg("  couldn't read debuffs: %s", tostring(err)) end
-    elseif cmd == "tremortest" then
-        DB.tremorTest = not DB.tremorTest
-        if not OutOfCombat(Tremor.Rebuild) then Msg("will rebuild after combat.") end
-        Msg("Tremor test %s: Boosted Rest %s as a sleep.", DB.tremorTest and "on" or "off",
-            DB.tremorTest and "now counts" or "no longer counts")
     elseif cmd == "buffs" then
         DB.buffwatch = not DB.buffwatch
         if config and config.showReminders then config.showReminders:SetChecked(DB.buffwatch) end
