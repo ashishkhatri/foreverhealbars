@@ -1655,6 +1655,7 @@ local function OpenMenu(unit)
 end
 
 OnMenuClick = function(btn, button)
+    if btn.fhbHandOff then return end            -- the click handed something over instead
     local n = CLICK_NUM[button]
     if not n then return end
     local mod = IsAltKeyDown() and "alt-" or IsControlKeyDown() and "ctrl-" or IsShiftKeyDown() and "shift-" or ""
@@ -1754,6 +1755,28 @@ SetupUnitButton = function(btn)
     SecureHandlerWrapScript(btn, "OnLeave", secureHandler, [[ self:ClearBindings() ]])
     SecureHandlerWrapScript(btn, "OnHide", secureHandler, [[ self:ClearBindings() ]])
     btn:HookScript("OnClick", OnMenuClick)
+
+    -- Something on the cursor (an item to trade or give, or a spell or item
+    -- waiting for a target): this one click hands it to the player instead
+    -- of casting the bound spell. Out of combat only: in combat the game
+    -- doesn't let an addon change what a click does.
+    btn:HookScript("PreClick", function(self, button)
+        if InCombatLockdown() or not self.unit then return end
+        if not (CursorHasItem() or (SpellIsTargeting and SpellIsTargeting())) then return end
+        local key = SecureButton_GetModifierPrefix(self) .. "type" .. SecureButton_GetButtonSuffix(button)
+        self.fhbHandOff = { key = key, value = self:GetAttribute(key) }
+        self:SetAttribute(key, "target")      -- the game's target action drops the item or the spell
+    end)
+    btn:HookScript("PostClick", function(self)
+        local h = self.fhbHandOff
+        if not h then return end
+        self.fhbHandOff = nil
+        if not InCombatLockdown() then self:SetAttribute(h.key, h.value) end
+    end)
+    -- dragging an item and letting go over a frame does the same
+    btn:SetScript("OnReceiveDrag", function(self)
+        if self.unit and CursorHasItem() and not InCombatLockdown() then pcall(DropItemOnUnit, self.unit) end
+    end)
     ApplyBindings(btn)
     btn:HookScript("OnAttributeChanged", function(b, key, value)
         if key == "unit" then

@@ -35,6 +35,7 @@ Blizzard's own party and raid frames are hidden by default (the raid tools tab o
 `/fhb` (or the gear next to the padlock) opens a window with a box for each click: left, right, middle, mouse 4, mouse 5, wheel up and wheel down, plain or with Shift, Ctrl or Alt. Drag a spell from your spellbook onto one of the squares: there's one for each click, plain or with Shift, Ctrl or Alt. Drag a square onto another to move it (the two swap). Right-click a square to clear it, or right-click an empty one to set it to Target or Menu. The spell's icon appears next to the box, and the text turns red if the spell isn't in your spellbook.
 
 - Any plain left or right click with nothing bound targets the player or opens their menu.
+- With something on your cursor, a click hands it over instead of casting: an item opens a trade (or gives it to the player), and a spell or item waiting for a target goes to that player. Dragging an item onto a frame works too. Out of combat only; in combat, click the player in the world or use a mouseover macro.
 - **Click to rez:** a plain left click on a dead player casts your resurrection spell (Resurrection, Redemption, Ancestral Spirit, or Rebirth for druids); on anyone alive it does whatever left click is set to. Works in combat.
 - **Reset to class defaults** restores the bindings below.
 - You can also type `target` or `menu` in any box.
