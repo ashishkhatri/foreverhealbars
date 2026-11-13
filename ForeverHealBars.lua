@@ -196,6 +196,7 @@ end
 local BuildDispelFx                   -- defined with the dispel effect below
 local BuildAuraBoxes                  -- the game-drawn dispel glow and HoT icons, below
 local MakeDebuffBox
+local BuildTremorFx                   -- the Tremor Totem stripes, below
 
 local function Build(btn)
     -- everything visual lives on a plain child frame, so fading it for range
@@ -436,6 +437,8 @@ local function Build(btn)
 
     BuildDispelFx(btn)
     BuildAuraBoxes(btn)
+    c.tremor = BuildTremorFx(c, c, c.hp:GetFrameLevel() + 5)
+    c.tremor:Hide()
     -- threat: an outline just outside the frame. It lives on the unit button,
     -- not inside the frame body, which cuts off anything past its edges.
     local aggroF = CreateFrame("Frame", nil, btn)
@@ -631,6 +634,171 @@ local function LearnIgnoredDebuffs(u)
     end
 end
 
+
+---------------------------------------------------------------------------
+-- Tremor Totem: fear, sleep and charm. Amber and black warning stripes slide
+-- along the top and bottom edges, with a FEAR / SLEEP / CHARM tag.
+-- In combat the game hides debuffs from addons, so three routes are used:
+--  1. the game's own aura frames, each told to look only for known fear,
+--     sleep or charm spells (the only route that can work in combat). Until
+--     the addon has seen that the game really applies that list (a debuff
+--     that isn't one of them is NOT picked up), these stay invisible;
+--  2. the game's "is this player charmed" check;
+--  3. reading the debuffs by name, out of combat.
+---------------------------------------------------------------------------
+local TREMOR_KINDS = {
+    fear = { tag = "FEAR",
+        names = { "Fear", "Psychic Scream", "Howl of Terror", "Intimidating Shout", "Scare Beast",
+                  "Bellowing Roar", "Panic", "Terrify", "Terrifying Screech", "Terrifying Howl",
+                  "Terrifying Roar", "Frightening Shout", "Intimidating Roar" },
+        ids = { 5782, 6213, 6215, 8122, 8124, 10888, 10890, 5484, 17928, 5246, 1513, 14326, 14327,
+                18431, 19408, 7399, 6605, 12096, 22686, 16508, 19134, 13704, 22884 } },
+    sleep = { tag = "SLEEP",
+        names = { "Sleep", "Hibernate", "Wyvern Sting", "Druid's Slumber", "Deep Sleep" },
+        ids = { 700, 1090, 8399, 12098, 2637, 18657, 18658, 19386, 24132, 24133, 8040 } },
+    charm = { tag = "CHARM",
+        names = { "Mind Control", "Seduction", "Dominate Mind", "Domination", "Cause Insanity",
+                  "True Fulfillment", "Gnomish Mind Control Cap" },
+        ids = { 605, 10911, 10912, 6358, 20604, 7645, 14515, 15859, 24327, 785, 13180 } },
+}
+local TREMOR_NAME, TREMOR_ID = {}, {}
+for kind, k in pairs(TREMOR_KINDS) do
+    k.idset = {}
+    for _, n in ipairs(k.names) do TREMOR_NAME[n] = kind end
+    for _, id in ipairs(k.ids) do TREMOR_ID[id] = kind; k.idset[id] = true end
+end
+local STRIPE_H = 6
+local HAZARD = "Interface\\AddOns\\" .. ADDON .. "\\media\\hazard"
+local TREMOR_TEXT = { 0.84, 0.63, 0.27 }
+local tremorProbe = "not seen yet"     -- for /fhb debug
+
+-- the stripes and tag, over the unit frame c (parent decides when it shows)
+BuildTremorFx = function(parent, c, level)
+    local fx = CreateFrame("Frame", nil, parent)
+    fx:SetAllPoints(c)
+    fx:SetFrameLevel(level)
+    local function strip(a1, a2)
+        local t = fx:CreateTexture(nil, "OVERLAY")
+        t:SetTexture(HAZARD, "REPEAT", "CLAMP")
+        t:SetPoint(a1)
+        t:SetPoint(a2)
+        t:SetHeight(STRIPE_H)
+        return t
+    end
+    local top, bottom = strip("TOPLEFT", "TOPRIGHT"), strip("BOTTOMLEFT", "BOTTOMRIGHT")
+    local tagBg = fx:CreateTexture(nil, "ARTWORK")
+    tagBg:SetColorTexture(0.08, 0.07, 0.05, 0.9)
+    local tag = fx:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    tag:SetPoint("BOTTOM", 0, STRIPE_H + 2)
+    tag:SetTextColor(TREMOR_TEXT[1], TREMOR_TEXT[2], TREMOR_TEXT[3])
+    tagBg:SetPoint("TOPLEFT", tag, "TOPLEFT", -3, 1)
+    tagBg:SetPoint("BOTTOMRIGHT", tag, "BOTTOMRIGHT", 3, -1)
+    fx.off = 0
+    fx:SetScript("OnUpdate", function(self, elapsed)
+        if self.gated then self:SetAlpha(DB.tremorBoxOK and 1 or 0) end
+        self.off = (self.off + elapsed * 0.5) % 1
+        local span = 64 * STRIPE_H / 16           -- one copy of the texture, in pixels
+        local reach = (self:GetWidth() or 0) / span
+        top:SetTexCoord(self.off, self.off + reach, 0, 1)
+        bottom:SetTexCoord(-self.off, -self.off + reach, 0, 1)   -- the other way
+    end)
+    function fx:SetKind(kind)
+        tag:SetText(TREMOR_KINDS[kind] and TREMOR_KINDS[kind].tag or "TREMOR")
+    end
+    fx:SetKind(nil)
+    return fx
+end
+
+-- one of the game's aura frames per kind, each limited to that kind's spells
+local function MakeTremorBoxes(c)
+    local boxes = {}
+    for kind, k in pairs(TREMOR_KINDS) do
+        local box = NewAuraBox(c, "CENTER", Flow and Flow.Right)
+        if box and pcall(box.AddAuraGroup, box, "tremor-" .. kind, "HARMFUL", {
+            maxFrameCount = 1,
+            templateNames = { "ForeverHealBarsDispelTemplate" },
+            initializeFrame = function(b)
+                pcall(b.SetIcon, b, b.Icon)
+                b:EnableMouse(false)
+                if not b.fhbTremor then
+                    b.fhbTremor = BuildTremorFx(b, c, c.hp:GetFrameLevel() + 5)
+                    b.fhbTremor.gated = true          -- invisible until the game's filter is proven
+                end
+                b.fhbTremor:SetKind(kind)
+            end,
+            candidateFilters = { includeSpellIDs = k.idset },
+        }) then
+            pcall(box.SetFrameLevel, box, c.hp:GetFrameLevel() + 5)
+            pcall(box.SetUnit, box, "none")
+            boxes[#boxes + 1] = box
+        elseif box then
+            box:Hide()
+        end
+    end
+    return boxes
+end
+
+-- is one of the game's tremor frames on this unit frame showing right now?
+local function TremorBoxShowing(c)
+    for _, box in ipairs(c.tremorBoxes or {}) do
+        for _, child in ipairs({ box:GetChildren() }) do
+            if child.fhbTremor and child:IsShown() and child.fhbTremor:IsShown() then return true end
+        end
+    end
+    return false
+end
+
+-- what the addon can read itself: charm check, then debuff names / IDs
+local function ReadTremor(u)
+    if UnitIsCharmed then
+        local ok, charmed = pcall(UnitIsCharmed, u)
+        if ok and Readable(charmed) and charmed then return "charm", true end
+    end
+    local kind, otherDebuff
+    local ok = pcall(function()
+        for i = 1, 40 do
+            local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HARMFUL")
+            if not a then break end
+            local k = (Readable(a.name) and TREMOR_NAME[a.name]) or (Readable(a.spellId) and TREMOR_ID[a.spellId])
+            if k then kind = kind or k else otherDebuff = true end
+        end
+    end)
+    return kind, ok, otherDebuff
+end
+
+local function UpdateTremor(btn)
+    local c, u = btn.c, btn.unit
+    if not (c.tremor and u and UnitExists(u)) then return end
+    local kind, readable, otherDebuff = ReadTremor(u)
+    if readable and C_UnitAuras.GetAuraDataByIndex and DB.tremorBoxOK == nil and c.tremorBoxes and #c.tremorBoxes > 0 then
+        -- prove (or disprove) that the game applies the spell lists: a debuff
+        -- that isn't fear / sleep / charm must not light the game's frames up
+        -- (the same answer three checks in a row, about a second, so a frame
+        -- that hasn't caught up yet can't decide it)
+        local showing = TremorBoxShowing(c)
+        local verdict = (showing and not kind) and "bad" or (otherDebuff and not kind and not showing) and "good" or nil
+        btn.tremorVotes = (verdict and verdict == btn.tremorVerdict) and (btn.tremorVotes or 0) + 1 or (verdict and 1 or 0)
+        btn.tremorVerdict = verdict
+        if verdict == "bad" and btn.tremorVotes >= 3 then
+            DB.tremorBoxOK = false
+            tremorProbe = "the game ignores the spell list (in combat: charm only)"
+        elseif verdict == "good" and btn.tremorVotes >= 3 then
+            DB.tremorBoxOK = true
+            tremorProbe = "the game applies the spell list (works in combat)"
+        end
+    end
+    if DB.tremorBoxOK == false then
+        for _, box in ipairs(c.tremorBoxes or {}) do box:Hide() end
+    end
+    -- our own stripes: whatever we could read; the game's frames cover combat
+    if kind then
+        c.tremor:SetKind(kind)
+        c.tremor:Show()
+    else
+        c.tremor:Hide()
+    end
+end
+
 BuildAuraBoxes = function(btn)
     local c = btn.c
     if not Flow then return end
@@ -657,11 +825,14 @@ BuildAuraBoxes = function(btn)
         pcall(box.SetUnit, box, "none")
     end
     c.dispelBox, c.hotBox, c.debuffBox = dispel, hots, debuffs
+    if DB.tremorBoxOK ~= false then c.tremorBoxes = MakeTremorBoxes(c) end
 end
 
 -- point the containers at the frame's player (also called in combat)
 local function SetAuraBoxUnit(btn, unit)
-    for _, box in ipairs({ btn.c.dispelBox, btn.c.hotBox, btn.c.debuffBox }) do
+    local list = { btn.c.dispelBox, btn.c.hotBox, btn.c.debuffBox }
+    for _, box in ipairs(btn.c.tremorBoxes or {}) do list[#list + 1] = box end
+    for _, box in ipairs(list) do
         if box then
             pcall(function()
                 if box:GetUnit() ~= (unit or "none") then box:SetUnit(unit or "none") end
@@ -1473,6 +1644,7 @@ local function UpdateAuras(btn)
         btn.c.dispel:Set(nil)
     end
     UpdateBuffNeeds(btn)
+    pcall(UpdateTremor, btn)
 end
 
 -- Threat: 0 none, 1 high threat, 2-3 has aggro. Used directly as the outline's
@@ -2729,6 +2901,9 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         if not okList then Msg("  full debuff list: refused") end
         local ids = {}
         for id in pairs(DB.ignoredDebuffIDs or {}) do ids[#ids + 1] = tostring(id) end
+        Msg("  tremor (fear/sleep/charm): %s  |  game frames: %s", tostring((ReadTremor(u))),
+            DB.tremorBoxOK == true and "proven" or DB.tremorBoxOK == false and "ignore the list"
+            or ("untested: " .. tremorProbe))
         Msg("  hidden debuff IDs learned: %s  |  debuff icons: %s",
             #ids > 0 and table.concat(ids, ", ") or "none", debuffRowMode)
         -- the tracked-ID route, per frame showing this player
