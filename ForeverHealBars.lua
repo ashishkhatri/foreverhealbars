@@ -733,7 +733,7 @@ do
                         b.fhbTremor:SetKind(kind)
                     end
                 end,
-                candidateFilters = { includeSpellIDs = k.idset },
+                candidateFilters = { includeSpellIDs = Tremor.IDs(kind) },
             }) then
                 pcall(box.SetFrameLevel, box, c.hp:GetFrameLevel() + 5)
                 pcall(box.SetUnit, box, "none")
@@ -746,6 +746,16 @@ do
     end
 
     -- what the addon can read itself: charm check, then debuff names / IDs
+    -- the spell IDs the game's frames look for: the built-in list plus any
+    -- this addon has learned on WoW Forever (saved)
+    Tremor.IDs = function(kind)
+        local set = {}
+        for id in pairs(TREMOR_KINDS[kind].idset) do set[id] = true end
+        for id in pairs(DB.tremorLearned and DB.tremorLearned[kind] or {}) do set[id] = true end
+        return set
+    end
+
+    local learnedNew
     local function ReadTremor(u)
         if UnitIsCharmed then
             local ok, charmed = pcall(UnitIsCharmed, u)
@@ -756,11 +766,45 @@ do
             for i = 1, 40 do
                 local a = C_UnitAuras.GetAuraDataByIndex(u, i, "HARMFUL")
                 if not a then break end
-                local k = (Readable(a.name) and TREMOR_NAME[a.name]) or (Readable(a.spellId) and TREMOR_ID[a.spellId])
-                if k then kind = kind or k else otherDebuff = true end
+                local name, id = a.name, a.spellId
+                local k = (Readable(name) and TREMOR_NAME[name]) or (Readable(id) and TREMOR_ID[id])
+                if k then
+                    kind = kind or k
+                    -- learn this server's ID for it, so the game's frames catch it in combat
+                    if Readable(id) and not TREMOR_ID[id] then
+                        DB.tremorLearned = DB.tremorLearned or {}
+                        DB.tremorLearned[k] = DB.tremorLearned[k] or {}
+                        if not DB.tremorLearned[k][id] then
+                            DB.tremorLearned[k][id] = true
+                            TREMOR_ID[id] = k
+                            learnedNew = true
+                            Msg("learned %s (spell %d) as %s; frames will now show it in combat too.",
+                                tostring(name), id, TREMOR_KINDS[k].tag:lower())
+                        end
+                    end
+                else
+                    otherDebuff = true
+                end
             end
         end)
         return kind, ok, otherDebuff
+    end
+
+    -- swap every frame's game frames for new ones that include learned IDs
+    local function RebuildBoxes()
+        for _, b in ipairs(buttons) do
+            local c = b.c
+            if c and c.tremorBoxes then
+                for _, box in ipairs(c.tremorBoxes) do
+                    pcall(box.SetUnit, box, "none")
+                    box:Hide()
+                end
+                c.tremorBoxes = Tremor.MakeBoxes(c)
+                for _, box in ipairs(c.tremorBoxes) do
+                    if b.unit then pcall(box.SetUnit, box, b.unit) end
+                end
+            end
+        end
     end
 
     Tremor.Update = function(btn)
@@ -768,7 +812,13 @@ do
         if not (c.tremor and u and UnitExists(u)) then return end
         -- the game's frames cover it whenever they exist (in and out of combat);
         -- our own stripes are the fallback where they couldn't be built
-        local kind = (not c.tremorBoxes or #c.tremorBoxes == 0) and ReadTremor(u) or nil
+        -- read anyway out of combat, to learn this server's spell IDs
+        local read = not InCombatLockdown() and ReadTremor(u) or nil
+        if learnedNew and not InCombatLockdown() then
+            learnedNew = false
+            RebuildBoxes()
+        end
+        local kind = (not c.tremorBoxes or #c.tremorBoxes == 0) and read or nil
         if kind then
             c.tremor:SetKind(kind)
             c.tremor:Show()
