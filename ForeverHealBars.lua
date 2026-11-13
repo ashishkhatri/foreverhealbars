@@ -675,7 +675,7 @@ do
     local STRIPE_H = 6
     local HAZARD = "Interface\\AddOns\\" .. ADDON .. "\\media\\hazard"
     local TREMOR_TEXT = { 0.84, 0.63, 0.27 }
-    local Tremor.probe = "not seen yet"     -- for /fhb debug
+    Tremor.probe = "not seen yet"           -- for /fhb debug
 
     -- the stripes and tag, over the unit frame c (parent decides when it shows)
     BuildTremorFx = function(parent, c, level)
