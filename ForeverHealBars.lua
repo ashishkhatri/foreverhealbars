@@ -654,7 +654,7 @@ do
                       "Bellowing Roar", "Panic", "Terrify", "Terrifying Screech", "Terrifying Howl",
                       "Terrifying Roar", "Frightening Shout", "Intimidating Roar" },
             ids = { 5782, 6213, 6215, 8122, 8124, 10888, 10890, 5484, 17928, 5246, 1513, 14326, 14327,
-                    18431, 19408, 7399, 6605, 12096, 22686, 16508, 19134, 13704, 22884 } },
+                    18431, 19408, 7399, 6605, 12096, 22686, 16508, 19134, 13704, 22884, 15398, 437928 } },
         sleep = { tag = "SLEEP",
             names = { "Sleep", "Hibernate", "Wyvern Sting", "Druid's Slumber", "Deep Sleep" },
             ids = { 700, 1090, 8399, 12098, 2637, 18657, 18658, 19386, 24132, 24133, 8040 } },
@@ -752,6 +752,9 @@ do
         local set = {}
         for id in pairs(TREMOR_KINDS[kind].idset) do set[id] = true end
         for id in pairs(DB.tremorLearned and DB.tremorLearned[kind] or {}) do set[id] = true end
+        -- /fhb tremortest: also treat Boosted Rest as a sleep, to see whether the
+        -- game's frames honour the list and draw the stripes
+        if DB.tremorTest and kind == "sleep" then set[1229451] = true end
         return set
     end
 
@@ -827,6 +830,7 @@ do
         end
     end
     Tremor.Read = ReadTremor
+    Tremor.Rebuild = RebuildBoxes
 end
 
 BuildAuraBoxes = function(btn)
@@ -3012,6 +3016,11 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
             end
         end)
         if not okAll then Msg("  couldn't read debuffs: %s", tostring(err)) end
+    elseif cmd == "tremortest" then
+        DB.tremorTest = not DB.tremorTest
+        if not OutOfCombat(Tremor.Rebuild) then Msg("will rebuild after combat.") end
+        Msg("Tremor test %s: Boosted Rest %s as a sleep.", DB.tremorTest and "on" or "off",
+            DB.tremorTest and "now counts" or "no longer counts")
     elseif cmd == "buffs" then
         DB.buffwatch = not DB.buffwatch
         if config and config.showReminders then config.showReminders:SetChecked(DB.buffwatch) end
