@@ -722,7 +722,8 @@ do
         local boxes = {}
         for kind, k in pairs(TREMOR_KINDS) do
             local box = NewAuraBox(c, "CENTER", Flow and Flow.Right)
-            if box and pcall(box.AddAuraGroup, box, "tremor-" .. kind, "HARMFUL", {
+            local ok, err = false, "couldn't create the game's aura frame"
+            if box then ok, err = pcall(box.AddAuraGroup, box, "tremor-" .. kind, "HARMFUL", {
                 maxFrameCount = 1,
                 templateNames = { "ForeverHealBarsDispelTemplate" },
                 initializeFrame = function(b)
@@ -734,7 +735,9 @@ do
                     end
                 end,
                 candidateFilters = { includeSpellIDs = Tremor.IDs(kind) },
-            }) then
+            }) end
+            if not ok then Tremor.buildError = tostring(err) end
+            if ok then
                 pcall(box.SetFrameLevel, box, c.hp:GetFrameLevel() + 5)
                 pcall(box.SetUnit, box, "none")
                 boxes[#boxes + 1] = box
@@ -2938,12 +2941,16 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         if not okList then Msg("  full debuff list: refused") end
         local ids = {}
         for id in pairs(DB.ignoredDebuffIDs or {}) do ids[#ids + 1] = tostring(id) end
-        local built = 0
+        local built = "no frame for this player"
         for _, b in ipairs(buttons) do
-            if b.unit == u and b.c and b.c.tremorBoxes then built = #b.c.tremorBoxes end
+            local fu = b.unit
+            if fu and b:IsShown() and b.c and ((fu == u) or select(2, pcall(UnitIsUnit, fu, u)) == true) then
+                built = tostring(#(b.c.tremorBoxes or {})) .. " of 3"
+            end
         end
-        Msg("  tremor (fear/sleep/charm) read directly: %s  |  game frames watching for it: %d",
-            tostring((Tremor.Read(u))), built)
+        Msg("  tremor (fear/sleep/charm) read directly: %s  |  game frames watching for it: %s%s",
+            tostring((Tremor.Read(u))), built,
+            Tremor.buildError and ("  |  setup error: " .. Tremor.buildError) or "")
         Msg("  hidden debuff IDs learned: %s  |  debuff icons: %s",
             #ids > 0 and table.concat(ids, ", ") or "none", debuffRowMode)
         -- the tracked-ID route, per frame showing this player
