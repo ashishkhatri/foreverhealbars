@@ -730,6 +730,7 @@ do
                         b.fhbTremor.gated = true          -- invisible until the game's filter is proven
                     end
                     b.fhbTremor:SetKind(kind)
+                b.fhbKind = kind
                 end,
                 candidateFilters = { includeSpellIDs = k.idset },
             }) then
@@ -804,6 +805,16 @@ do
         end
     end
     Tremor.Read = ReadTremor
+    -- for /fhb debug: which of the game's fear / sleep / charm frames are lit
+    Tremor.Lit = function(c)
+        local lit, built = {}, #(c.tremorBoxes or {})
+        for _, box in ipairs(c.tremorBoxes or {}) do
+            for _, child in ipairs({ box:GetChildren() }) do
+                if child.fhbTremor and child:IsShown() then lit[#lit + 1] = child.fhbKind or "?" end
+            end
+        end
+        return built, lit
+    end
 end
 
 BuildAuraBoxes = function(btn)
@@ -2914,6 +2925,14 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         Msg("  tremor (fear/sleep/charm): %s  |  game frames: %s", tostring((Tremor.Read(u))),
             DB.tremorBoxOK == true and "proven" or DB.tremorBoxOK == false and "ignore the list"
             or ("untested: " .. Tremor.probe))
+        for _, b in ipairs(buttons) do
+            local fu = b.unit
+            if fu and b:IsShown() and b.c and ((fu == u) or select(2, pcall(UnitIsUnit, fu, u)) == true) then
+                local built, lit = Tremor.Lit(b.c)
+                Msg("  game's fear/sleep/charm frames on %s: %d built, lit: %s", fu, built,
+                    #lit > 0 and table.concat(lit, ", ") or "none")
+            end
+        end
         Msg("  hidden debuff IDs learned: %s  |  debuff icons: %s",
             #ids > 0 and table.concat(ids, ", ") or "none", debuffRowMode)
         -- the tracked-ID route, per frame showing this player
