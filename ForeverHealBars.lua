@@ -748,7 +748,9 @@ do
     local function TremorBoxShowing(c)
         for _, box in ipairs(c.tremorBoxes or {}) do
             for _, child in ipairs({ box:GetChildren() }) do
-                if child.fhbTremor and child:IsShown() and child.fhbTremor:IsShown() then return true end
+                -- (the game's buttons can't be asked; our stripes on them can:
+            -- they're visible exactly while their button is)
+            if child.fhbTremor and child.fhbTremor:IsVisible() then return true end
             end
         end
         return false
@@ -810,7 +812,7 @@ do
         local lit, built = {}, #(c.tremorBoxes or {})
         for _, box in ipairs(c.tremorBoxes or {}) do
             for _, child in ipairs({ box:GetChildren() }) do
-                if child.fhbTremor and child:IsShown() then lit[#lit + 1] = child.fhbKind or "?" end
+                if child.fhbTremor and child.fhbTremor:IsVisible() then lit[#lit + 1] = child.fhbKind or "?" end
             end
         end
         return built, lit
@@ -2928,9 +2930,13 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
         for _, b in ipairs(buttons) do
             local fu = b.unit
             if fu and b:IsShown() and b.c and ((fu == u) or select(2, pcall(UnitIsUnit, fu, u)) == true) then
-                local built, lit = Tremor.Lit(b.c)
-                Msg("  game's fear/sleep/charm frames on %s: %d built, lit: %s", fu, built,
-                    #lit > 0 and table.concat(lit, ", ") or "none")
+                local okL, built, lit = pcall(Tremor.Lit, b.c)
+                if okL then
+                    Msg("  game's fear/sleep/charm frames on %s: %d built, lit: %s", fu, built,
+                        #lit > 0 and table.concat(lit, ", ") or "none")
+                else
+                    Msg("  game's fear/sleep/charm frames on %s: couldn't check (%s)", fu, tostring(built))
+                end
             end
         end
         Msg("  hidden debuff IDs learned: %s  |  debuff icons: %s",
