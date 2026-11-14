@@ -6,7 +6,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 
 - **Grid layout.** Compact squares, five per column, one column per group. Works solo, in a party and in raids up to 40.
 - **Click-casting.** Bind spells to left, right, middle, mouse 4, mouse 5 and the mouse wheel (up and down), with or without Shift, Ctrl or Alt, then click (or scroll over) a frame to cast on that player. Wheel directions with nothing bound still zoom the camera.
-- **Your HoTs.** Small icons in the top-right corner of each frame. Works in combat.
+- **Your HoTs.** Small icons in the top-right corner of each frame. Works in combat. Hover a HoT or debuff icon to see what it is.
 - **All debuffs.** Small icons in the bottom-left corner for every debuff on the player, whether or not you can remove it (up to four). Works in combat. Long effects over 30 minutes, like a Camp Tent's Boosted Rest, are left out.
 - **Dispellable debuffs.** When someone has a debuff you can remove, their whole frame slowly pulses in the game's color for that debuff type, with a thick, steady border in the same color. Works in combat, and clears the moment it's removed.
 - **Incoming heals.** A light green extension on the health bar for heals about to land, that slides out from the health edge when a heal starts, then softly pulses until it lands. HoTs (Renew, Rejuvenation, Regrowth) from anyone add a softer, steady segment of the same green after it showing what they still have left to heal, shrinking as they tick. When the game doesn't report a HoT's amount (common for other players' HoTs), the spell rank's base healing is used.

@@ -562,6 +562,19 @@ local debuffRowMode = "not built"                      -- for /fhb debug
 -- Resurrection Sickness (10 minutes) still shows.
 local DEBUFF_MAX_SECONDS = 1800
 
+-- HoT and debuff icons: hovering shows what the aura is (the game's own
+-- icons fill in the tooltip themselves, so it works in combat), but clicks
+-- pass straight through to the frame underneath for click-casting.
+local function HoverOnly(b)
+    local ok = pcall(b.EnableMouse, b, true)
+    if ok and b.SetMouseClickEnabled then
+        pcall(b.SetMouseClickEnabled, b, false)
+        pcall(b.SetMouseMotionEnabled, b, true)
+    elseif ok then
+        pcall(b.EnableMouse, b, false)          -- can't split clicks from hovering: keep clicks working
+    end
+end
+
 -- every debuff on the player, dispellable or not: small icons, bottom left
 MakeDebuffBox = function(c)
     local box = NewAuraBox(c, "BOTTOMLEFT", Flow and Flow.Right)
@@ -573,7 +586,7 @@ MakeDebuffBox = function(c)
             templateNames = { "ForeverHealBarsHotTemplate" },
             initializeFrame = function(b)
                 pcall(b.SetIcon, b, b.Icon)
-                b:EnableMouse(false)
+                HoverOnly(b)
             end,
             candidateFilters = filters,
             layout = { elementSpacing = 1 },
@@ -650,7 +663,7 @@ BuildAuraBoxes = function(btn)
         templateNames = { "ForeverHealBarsHotTemplate" },
         initializeFrame = function(b)
             pcall(b.SetIcon, b, b.Icon)
-            b:EnableMouse(false)
+            HoverOnly(b)
         end,
         candidateFilters = { maxDuration = HOT_MAX_SECONDS },
         layout = { elementSpacing = 1 },
