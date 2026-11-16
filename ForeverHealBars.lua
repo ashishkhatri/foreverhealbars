@@ -874,23 +874,9 @@ local function UnitRole(u)
     return role
 end
 
--- Tanks stand out: their role icon fills a big part of the bottom-right
--- corner (about half the frame's height, never under twice the normal icon).
--- Healer and damage icons stay the normal icon size.
-local function SizeRole(btn)
-    local s = btn.iconSize or 11
-    local size = s
-    if btn.isTank then
-        size = math.max(s * 2, math.floor((btn:GetHeight() or 46) * 0.55 + 0.5))
-    end
-    btn.c.role:SetSize(size, size)
-end
-
 local function UpdateRole(btn)
     local u, icon = btn.unit, btn.c.role
     local role = (not btn.isPet and u and UnitExists(u)) and UnitRole(u) or nil
-    btn.isTank = role == "TANK"
-    SizeRole(btn)
     if not role then icon:Hide() return end
     -- the game's small role icons; the older round role art as a fallback
     if not (icon.SetAtlas and pcall(icon.SetAtlas, icon, ROLE_ATLAS[role]) and icon:GetAtlas()) then
@@ -1966,11 +1952,10 @@ end
 local function ApplyIcons(b)
     local c = b.c
     local s = b.isPet and math.min(iconSize, IconFor(b:GetWidth(), b:GetHeight())) or iconSize
-    b.iconSize = s
-    SizeRole(b)
+    c.role:SetSize(s, s)
     local ns = s + 1                                -- Buffwatch icons, a touch bigger
     c.need:ClearAllPoints()
-    c.need:SetPoint("BOTTOMRIGHT", c.role, "BOTTOMLEFT", -3, 0)   -- left of the role icon, big or small
+    c.need:SetPoint("BOTTOMRIGHT", -(s + 4), 2 + POWER_H)
     c.need:SetSize((ns + 1) * 3, ns)
     for i, t in ipairs(c.needIcons) do
         t:SetSize(ns, ns)
