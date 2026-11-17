@@ -1800,27 +1800,16 @@ SetupUnitButton = function(btn)
     -- of casting the bound spell. Out of combat only: in combat the game
     -- doesn't let an addon change what a click does.
     btn:HookScript("PreClick", function(self, button)
-        local kind = GetCursorInfo()
-        local hasItem = CursorHasItem() or kind == "item"
+        local hasItem = CursorHasItem() or GetCursorInfo() == "item"
         local targeting = SpellIsTargeting and SpellIsTargeting()
-        if hasItem or targeting or kind then
-            Msg("debug click %s: cursor=%s item=%s targeting=%s combat=%s unit=%s",
-                tostring(button), tostring(kind), tostring(hasItem), tostring(targeting),
-                tostring(InCombatLockdown()), tostring(self.unit))
-        end
         if InCombatLockdown() or not self.unit then return end
         if not (hasItem or targeting) then return end
         local key = SecureButton_GetModifierPrefix(self) .. "type" .. SecureButton_GetButtonSuffix(button)
         self.fhbHandOff = { key = key, value = self:GetAttribute(key) }
         self:SetAttribute(key, "target")      -- the game's target action drops the item or the spell
-        Msg("debug   %s was %s, now %s", key, tostring(self.fhbHandOff.value), tostring(self:GetAttribute(key)))
     end)
     btn:HookScript("PostClick", function(self)
         local h = self.fhbHandOff
-        if h then
-            Msg("debug   after click: cursor=%s, trade window open=%s", tostring(GetCursorInfo()),
-                tostring(TradeFrame and TradeFrame:IsShown()))
-        end
         if not h then return end
         self.fhbHandOff = nil
         if not InCombatLockdown() then self:SetAttribute(h.key, h.value) end
