@@ -17,6 +17,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Roles.** A small tank, healer or damage icon in the bottom-right corner of each frame, from the group's role assignment (or the raid's main tank mark).
 - **Your target.** The frame of whoever you have targeted gets a white outline.
 - **Range and aggro.** Out-of-range players are dimmed, and players with aggro get a red outline (faint for high threat).
+- **Offline players.** An offline player's frame turns gray, with "Offline" under the name.
 - **Lock button.** A small padlock above the top-left corner unlocks the frames. While unlocked, drag anywhere on them to move them, and drag the bottom-right corner to resize: right for wider frames, down for taller ones. The names and the corner icons grow and shrink with the frames (never smaller than 9 pt text and 11 px icons). Click the padlock again to lock.
 - **Settings button.** A small gear next to the padlock opens the settings window (same as `/fhb`).
 
@@ -37,7 +38,6 @@ Blizzard's own party and raid frames are hidden by default (the raid tools tab o
 - Any plain left or right click with nothing bound targets the player or opens their menu.
 - With something on your cursor, a click hands it over instead of casting: an item opens a trade (or gives it to the player), and a spell or item waiting for a target goes to that player. Dragging an item onto a frame works too. Out of combat only; in combat, click the player in the world or use a mouseover macro.
 - **Click to rez:** a plain left click on a dead player casts your resurrection spell (Resurrection, Redemption, Ancestral Spirit, or Rebirth for druids); on anyone alive it does whatever left click is set to. Works in combat.
-- **Offline players:** an offline player's box turns gray, with "Offline" under the name.
 - **Reset to class defaults** restores the bindings below.
 - You can also type `target` or `menu` in any box.
 - Bindings are saved per character.
