@@ -726,6 +726,7 @@ local function PlaceHot(btn, afterIncoming)
     PlaceAbsorb(btn)
 end
 
+local OFFLINE_GRAY = 0.35
 local function UpdateHealth(btn)
     local u, c = btn.unit, btn.c
     if not u or not UnitExists(u) then return end
@@ -759,7 +760,24 @@ local function UpdateHealth(btn)
         c.inc:Hide()
     end
 
-    local status = (not UnitIsConnected(u) and "Offline") or (UnitIsGhost(u) and "Ghost")
+    -- offline: the whole box goes gray
+    local offline = not UnitIsConnected(u)
+    if offline then
+        c.hp:SetValue(max)
+        c.hp:SetStatusBarColor(OFFLINE_GRAY, OFFLINE_GRAY, OFFLINE_GRAY)
+        c.dmg:Hide()
+        c.name:SetTextColor(0.6, 0.6, 0.6)
+    elseif btn.offline then
+        local cc = btn.classColor
+        if cc then
+            c.hp:SetStatusBarColor(cc[1], cc[2], cc[3])
+            c.dmg:SetStatusBarColor(cc[1], cc[2], cc[3])
+        end
+        c.name:SetTextColor(1, 1, 1)
+    end
+    btn.offline = offline
+
+    local status = (offline and "Offline") or (UnitIsGhost(u) and "Ghost")
         or (UnitIsDead(u) and "Dead") or nil
     c.status:SetText(status or "")
     -- centre the name unless there's a status line under it

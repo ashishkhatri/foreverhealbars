@@ -37,6 +37,7 @@ Blizzard's own party and raid frames are hidden by default (the raid tools tab o
 - Any plain left or right click with nothing bound targets the player or opens their menu.
 - With something on your cursor, a click hands it over instead of casting: an item opens a trade (or gives it to the player), and a spell or item waiting for a target goes to that player. Dragging an item onto a frame works too. Out of combat only; in combat, click the player in the world or use a mouseover macro.
 - **Click to rez:** a plain left click on a dead player casts your resurrection spell (Resurrection, Redemption, Ancestral Spirit, or Rebirth for druids); on anyone alive it does whatever left click is set to. Works in combat.
+- **Offline players:** an offline player's box turns gray, with "Offline" under the name.
 - **Reset to class defaults** restores the bindings below.
 - You can also type `target` or `menu` in any box.
 - Bindings are saved per character.
