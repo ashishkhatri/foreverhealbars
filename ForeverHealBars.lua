@@ -1817,21 +1817,18 @@ SetupUnitButton = function(btn)
     end)
     btn:HookScript("PostClick", function(self)
         local h = self.fhbHandOff
+        if h then
+            Msg("debug   after click: cursor=%s, trade window open=%s", tostring(GetCursorInfo()),
+                tostring(TradeFrame and TradeFrame:IsShown()))
+        end
         if not h then return end
         self.fhbHandOff = nil
         if not InCombatLockdown() then self:SetAttribute(h.key, h.value) end
     end)
-    -- dragging an item and letting go over a frame does the same
-    btn:SetScript("OnReceiveDrag", function(self)
-        local kind = GetCursorInfo()
-        local drop = DropItemOnUnit or (C_Item and C_Item.DropItemOnUnit)
-        Msg("debug drop: cursor=%s combat=%s unit=%s DropItemOnUnit=%s", tostring(kind),
-            tostring(InCombatLockdown()), tostring(self.unit), drop and "yes" or "missing")
-        if self.unit and (CursorHasItem() or kind == "item") and not InCombatLockdown() and drop then
-            local ok, err = pcall(drop, self.unit)
-            if not ok then Msg("debug   drop failed: %s", tostring(err)) end
-        end
-    end)
+    -- Dragging an item and letting go over a frame also ends in a click, which
+    -- the hand-off above turns into the game's own "give to player" action.
+    -- (Dropping it from here as well put the item back in the bags first, so
+    -- the click then cast the heal.)
     ApplyBindings(btn)
     btn:HookScript("OnAttributeChanged", function(b, key, value)
         if key == "unit" then
