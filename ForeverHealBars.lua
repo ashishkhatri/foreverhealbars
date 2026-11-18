@@ -2304,6 +2304,49 @@ local function CreateConfig()
 
     local ACCENT_DROP = { 0.2, 1, 0.6 }
     f.boxes = {}
+
+    -- Spell ranks. A binding is a spell name ("Healing Wave", always the
+    -- highest rank you know) or a set rank ("Healing Wave(Rank 3)").
+    local function SplitRank(v)
+        local name, r = v:match("^(.-)%s*%(Rank (%d+)%)$")
+        if name then return name, tonumber(r) end
+        return v, nil
+    end
+    local function RankOf(spellID)
+        local sub = spellID and C_Spell and C_Spell.GetSpellSubtext and C_Spell.GetSpellSubtext(spellID)
+        if not sub and spellID and GetSpellSubtext then sub = GetSpellSubtext(spellID) end
+        return sub and tonumber(sub:match("Rank (%d+)"))
+    end
+    -- the ranks of a spell you know, lowest first
+    local function KnownRanks(name)
+        local seen, list = {}, {}
+        local function add(r) if r and not seen[r] then seen[r] = true; list[#list + 1] = r end end
+        -- every rank listed in the spellbook
+        if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines and Enum.SpellBookSpellBank then
+            for t = 1, C_SpellBook.GetNumSpellBookSkillLines() do
+                local line = C_SpellBook.GetSpellBookSkillLineInfo(t)
+                if line then
+                    for i = line.itemIndexOffset + 1, line.itemIndexOffset + line.numSpellBookItems do
+                        local info = C_SpellBook.GetSpellBookItemInfo(i, Enum.SpellBookSpellBank.Player)
+                        if info and info.name == name then
+                            add(info.subName and tonumber(info.subName:match("Rank (%d+)")) or RankOf(info.spellID))
+                        end
+                    end
+                end
+            end
+        end
+        -- and any the game knows by "Name(Rank N)" (the book may show only the top one)
+        -- (checked by the rank of the spell it finds, in case the name lookup
+        -- ignores the rank part)
+        if C_Spell and C_Spell.GetSpellInfo then
+            for r = 1, 20 do
+                local info = not seen[r] and C_Spell.GetSpellInfo(name .. "(Rank " .. r .. ")")
+                if info and RankOf(info.spellID) == r then add(r) end
+            end
+        end
+        table.sort(list)
+        return list
+    end
     for r, mod in ipairs(MODS) do
         local y = top - 20 - (r - 1) * rowH
         local l = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -2327,6 +2370,8 @@ local function CreateConfig()
             sq.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
             sq.label = sq:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             sq.label:SetPoint("CENTER")
+            sq.rank = sq:CreateFontString(nil, "OVERLAY", "NumberFontNormal")   -- set rank, if any
+            sq.rank:SetPoint("BOTTOMRIGHT", -2, 2)
             sq.drop = Border(sq, 2, 2)                      -- outline while dragging a spell
             sq.drop:Set(ACCENT_DROP[1], ACCENT_DROP[2], ACCENT_DROP[3])
             sq.drop:SetAlpha(0)
@@ -2341,6 +2386,7 @@ local function CreateConfig()
                 local low = v and v:lower()
                 self.icon:Hide()
                 self.label:SetText("")
+                self.rank:SetText("")
                 self.edge:Set(0.35, 0.36, 0.42)
                 if not v then
                     -- defaults for plain left / right
@@ -2351,10 +2397,12 @@ local function CreateConfig()
                 elseif low == "menu" then
                     self.label:SetText("Menu")
                 else
-                    local name, tex = SpellInfo(v)
+                    local base, rank = SplitRank(v)
+                    local name, tex = SpellInfo(base)
                     self.icon:SetTexture(tex or 134400)     -- question mark if unknown
                     self.icon:Show()
                     if not name then self.edge:Set(1, 0.25, 0.25) end
+                    if rank then self.rank:SetText(rank) end
                 end
             end
 
@@ -2369,13 +2417,23 @@ local function CreateConfig()
             local function TakeCursorSpell(self)
                 local kind, a1, a2, a3 = GetCursorInfo()
                 if kind ~= "spell" then return false end
-                local name
-                if a3 then name = SpellInfo(a3) end                       -- spell ID
+                local name, rank
+                if a3 then name = SpellInfo(a3); rank = RankOf(a3) end    -- spell ID
                 if not name and a1 and GetSpellBookItemName then
-                    name = GetSpellBookItemName(a1, a2)                   -- book slot
+                    local sub
+                    name, sub = GetSpellBookItemName(a1, a2)              -- book slot
+                    rank = sub and tonumber(sub:match("Rank (%d+)"))
                 end
                 if not name and C_SpellBook and C_SpellBook.GetSpellBookItemName and a1 then
                     name = C_SpellBook.GetSpellBookItemName(a1, a2)
+                end
+                -- a lower rank dropped here stays that rank; the top rank
+                -- follows you up as you learn new ones
+                if name and rank then
+                    local ranks = KnownRanks(name)
+                    if ranks[#ranks] and rank < ranks[#ranks] then
+                        name = name .. "(Rank " .. rank .. ")"
+                    end
                 end
                 -- The cursor is left alone: clearing it from addon code makes the
                 -- action and totem bars update as this addon's work and trip over
@@ -2393,6 +2451,26 @@ local function CreateConfig()
                 f:StartMove(self)
             end)
             sq:SetScript("OnDragStop", function(self) f:EndMove() end)
+            -- mouse wheel over a spell: down for a lower rank, up for a higher one
+            sq:EnableMouseWheel(true)
+            sq:SetScript("OnMouseWheel", function(self, delta)
+                local v = Binds()[self.key]
+                local low = v and v:lower()
+                if not v or low == "target" or low == "menu" then return end
+                local base, rank = SplitRank(v)
+                local ranks = KnownRanks(base)
+                local top = ranks[#ranks]
+                if not top then return end
+                local cur = rank or top
+                local pick
+                if delta < 0 then
+                    for i = #ranks, 1, -1 do if ranks[i] < cur then pick = ranks[i]; break end end
+                else
+                    for i = 1, #ranks do if ranks[i] > cur then pick = ranks[i]; break end end
+                end
+                if not pick then return end
+                Assign(self, pick >= top and base or (base .. "(Rank " .. pick .. ")"))
+            end)
             sq:SetScript("OnClick", function(self, button)
                 if TakeCursorSpell(self) then return end
                 if button == "RightButton" then
@@ -2420,9 +2498,22 @@ local function CreateConfig()
                     GameTooltip:AddLine(low == "target" and "Target" or "Menu", 1, 0.82, 0)
                     GameTooltip:AddLine("Right-click to change. Drag to another square to move.", 0.5, 0.5, 0.5, true)
                 else
-                    local name = SpellInfo(v)
-                    GameTooltip:AddLine(v, 1, 0.82, 0)
-                    if not name then GameTooltip:AddLine("Not in your spellbook yet.", 1, 0.3, 0.3) end
+                    local base, rank = SplitRank(v)
+                    local name = SpellInfo(base)
+                    GameTooltip:AddLine(base, 1, 0.82, 0)
+                    if not name then
+                        GameTooltip:AddLine("Not in your spellbook yet.", 1, 0.3, 0.3)
+                    else
+                        local ranks = KnownRanks(base)
+                        if rank then
+                            GameTooltip:AddLine("Rank " .. rank .. " (of " .. (ranks[#ranks] or "?") .. ")", 1, 1, 1)
+                        elseif #ranks > 1 then
+                            GameTooltip:AddLine("Highest rank (" .. ranks[#ranks] .. ")", 1, 1, 1)
+                        end
+                        if #ranks > 1 then
+                            GameTooltip:AddLine("Scroll down for a lower rank, up for a higher one.", 0.5, 0.5, 0.5, true)
+                        end
+                    end
                     GameTooltip:AddLine("Right-click to clear. Drag to another square to move.", 0.5, 0.5, 0.5, true)
                 end
                 GameTooltip:Show()
