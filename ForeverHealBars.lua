@@ -1769,6 +1769,14 @@ SetupUnitButton = function(btn)
     btn:RegisterForClicks("AnyUp")
     -- secure pre-click snippet: point the target macro at this frame's unit
     SecureHandlerWrapScript(btn, "OnClick", secureHandler, [[
+        -- a mouse wheel binding left behind (the pointer left without the
+        -- frame noticing): let go of the wheel and don't cast
+        if button == "wheelup" or button == "wheeldown" then
+            if not self:IsUnderMouse(true) then
+                self:ClearBindings()
+                return false
+            end
+        end
         local u = self:GetAttribute("unit")
         if u then self:SetAttribute("*macrotext*", "/target " .. u) end
         local rez = self:GetAttribute("fhbrez")
