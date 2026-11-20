@@ -2747,7 +2747,45 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         DB.buffReminders = nil
         if DB.buffwatch == nil then DB.buffwatch = false end
     elseif event == "PLAYER_LOGIN" then
-        charKey = UnitName("player") .. "-" .. GetRealmName()
+        -- The game sometimes reports a blank realm name: use the last one seen,
+        -- or the realm this character's bindings are already saved under.
+        local name = UnitName("player")
+        local realm = GetRealmName()
+        if not realm or realm == "" then realm = GetNormalizedRealmName and GetNormalizedRealmName() end
+        if realm and realm ~= "" then
+            DB.lastRealm = realm
+        else
+            realm = DB.lastRealm
+            if not realm then
+                local found, many = nil, false
+                local prefix = name .. "-"
+                for k in pairs(DB.binds) do
+                    local r = k:sub(1, #prefix) == prefix and k:sub(#prefix + 1)
+                    if r and r ~= "" then
+                        if found and found ~= r then many = true end
+                        found = found or r
+                    end
+                end
+                realm = not many and found or nil
+                DB.lastRealm = realm
+            end
+            realm = realm or ""
+        end
+        charKey = name .. "-" .. realm
+        -- bindings saved while the realm name was blank: keep them only if
+        -- you changed them (stock defaults never replace your real bindings)
+        local blankKey = name .. "-"
+        if charKey ~= blankKey and DB.binds[blankKey] then
+            local blank, real = DB.binds[blankKey], DB.binds[charKey]
+            local _, class = UnitClass("player")
+            local stock = SameBinds(blank, ClassDefaults())
+            for _, set in ipairs(OLD_DEFAULTS) do
+                if set[class] and SameBinds(blank, set[class]) then stock = true end
+            end
+            if not real or not stock then DB.binds[charKey] = blank end
+            DB.binds[blankKey] = nil
+            DB.defaulted[blankKey] = nil
+        end
         -- give defaults to characters with no bindings, and upgrade ones still
         -- on the previous defaults; anything customised is left alone
         if DB.defaulted[charKey] ~= 3 then
