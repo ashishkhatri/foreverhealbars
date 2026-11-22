@@ -1623,6 +1623,8 @@ local function ApplyBindings(btn)
                     typ = "target"
                 elseif low == "menu" then
                     typ = "togglemenu"
+                elseif low == "focus" then
+                    typ = "macro"                   -- /focus on the frame under the pointer
                 else
                     typ, spell = "spell", val
                 end
@@ -1640,6 +1642,10 @@ local function ApplyBindings(btn)
             local sfx = ClickSuffix(click)
             btn:SetAttribute(mod .. "type" .. sfx, typ)
             btn:SetAttribute(mod .. "spell" .. sfx, spell)
+            if not (mod == "" and click == 1) then
+                btn:SetAttribute(mod .. "macrotext" .. sfx,
+                    (val and val:lower() == "focus") and "/focus [@mouseover]" or nil)
+            end
             -- only bind the wheel where something is set, so it still zooms
             -- the camera everywhere else
             if WHEEL[click] and (typ or menuClicks[mod .. click]) then
@@ -2299,7 +2305,7 @@ local function CreateConfig()
     help:SetPoint("TOPRIGHT", -16, -32)
     help:SetJustifyH("LEFT")
     help:SetText("Drag a spell from your spellbook onto a square. Right-click a square to clear it; "
-        .. "right-click an empty one to set Target or Menu. Drag a square onto another to move it. "
+        .. "right-click an empty one to set Target, Menu or Focus. Drag a square onto another to move it. "
         .. "After dropping from the spellbook, right-click "
         .. "anywhere or press Escape to let go of the spell.")
 
@@ -2404,6 +2410,8 @@ local function CreateConfig()
                     self.label:SetText("Target")
                 elseif low == "menu" then
                     self.label:SetText("Menu")
+                elseif low == "focus" then
+                    self.label:SetText("Focus")
                 else
                     local base, rank = SplitRank(v)
                     local name, tex = SpellInfo(base)
@@ -2464,7 +2472,7 @@ local function CreateConfig()
             sq:SetScript("OnMouseWheel", function(self, delta)
                 local v = Binds()[self.key]
                 local low = v and v:lower()
-                if not v or low == "target" or low == "menu" then return end
+                if not v or low == "target" or low == "menu" or low == "focus" then return end
                 local base, rank = SplitRank(v)
                 local ranks = KnownRanks(base)
                 local top = ranks[#ranks]
@@ -2484,9 +2492,10 @@ local function CreateConfig()
                 if button == "RightButton" then
                     local v = Binds()[self.key]
                     local low = v and v:lower()
-                    if v and low ~= "target" and low ~= "menu" then Assign(self, nil)   -- clear a spell
+                    if v and low ~= "target" and low ~= "menu" and low ~= "focus" then Assign(self, nil)   -- clear a spell
                     elseif not v then Assign(self, "target")
                     elseif low == "target" then Assign(self, "menu")
+                    elseif low == "menu" then Assign(self, "focus")
                     else Assign(self, nil) end
                 end
             end)
@@ -2501,9 +2510,14 @@ local function CreateConfig()
                     local def = (mod == "" and click == 1 and "Target (default)") or
                         (mod == "" and click == 2 and "Menu (default)") or "Empty"
                     GameTooltip:AddLine(def, 0.7, 0.7, 0.7)
-                    GameTooltip:AddLine("Drag a spell here. Right-click for Target / Menu.", 0.5, 0.5, 0.5, true)
-                elseif low == "target" or low == "menu" then
-                    GameTooltip:AddLine(low == "target" and "Target" or "Menu", 1, 0.82, 0)
+                    GameTooltip:AddLine("Drag a spell here. Right-click for Target / Menu / Focus.", 0.5, 0.5, 0.5, true)
+                elseif low == "target" or low == "menu" or low == "focus" then
+                    GameTooltip:AddLine(low == "target" and "Target" or low == "menu" and "Menu" or "Focus", 1, 0.82, 0)
+                    if low == "menu" and not (mod == "" and click == 2) then
+                        GameTooltip:AddLine("Set Focus doesn't work from this menu (the game only allows it from plain right click). Use Focus instead.", 1, 0.5, 0.25, true)
+                    elseif low == "focus" then
+                        GameTooltip:AddLine("Makes this player your focus.", 0.8, 0.8, 0.8, true)
+                    end
                     GameTooltip:AddLine("Right-click to change. Drag to another square to move.", 0.5, 0.5, 0.5, true)
                 else
                     local base, rank = SplitRank(v)
