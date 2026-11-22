@@ -1594,8 +1594,7 @@ end
 -- WoW only lets "target" and "menu" through on clicks that Blizzard's Click
 -- Casting has an interaction for (by default plain left / plain right). Other
 -- clicks target through a secure macro filled in at click time, and open the
--- menu securely once Blizzard's Click Casting has an "Open Unit Menu"
--- interaction for that click (added automatically, see below).
+-- menu by turning into a "fhbmenu" click in the secure click handler.
 local menuClicks = {}                -- "alt-2" = true etc., opened securely on click
 
 -- Click to rez: a plain left click on a dead player casts your resurrection
@@ -1607,65 +1606,6 @@ local function RezSpell()
     local _, class = UnitClass("player")
     local spell = REZ_SPELLS[class]
     return spell and SpellInfo(spell) and spell or nil
-end
-
--- Blizzard's Click Casting decides which clicks may open a unit's menu
--- securely ("Open Unit Menu" interactions; plain right click by default).
--- For each other click set to Menu here, add that interaction there, so the
--- game opens the menu itself and Set Focus etc. work. Out of combat only.
-local CLICK_BUTTON = { "LeftButton", "RightButton", "MiddleButton", "Button4", "Button5" }
-local modBits
-local function ModifierBits(mod)
-    if not modBits then
-        modBits = { [""] = 0 }
-        local name = C_ClickBindings and C_ClickBindings.GetStringFromModifiers
-        if name then
-            for m = 1, 255 do
-                local ok, text = pcall(name, m)
-                if ok and text then
-                    text = text:upper():gsub("[^A-Z]", "")
-                    if text == "SHIFT" and not modBits["shift-"] then modBits["shift-"] = m end
-                    if text == "CTRL" and not modBits["ctrl-"] then modBits["ctrl-"] = m end
-                    if text == "ALT" and not modBits["alt-"] then modBits["alt-"] = m end
-                end
-            end
-        end
-    end
-    return modBits[mod]
-end
-local function EnsureMenuInteractions(list)
-    local CB = C_ClickBindings
-    if not (CB and CB.GetProfileInfo and CB.SetProfileByInfo and Enum.ClickBindingType
-        and Enum.ClickBindingInteraction) or InCombatLockdown() then return end
-    local ok, profile = pcall(CB.GetProfileInfo)
-    if not ok or type(profile) ~= "table" then return end
-    local menuID = Enum.ClickBindingInteraction.OpenContextMenu
-    local typeID = Enum.ClickBindingType.Interaction
-    local changed = false
-    for _, key in ipairs(list) do
-        local mod, click = key:match("^(.-)(%d+)$")
-        local button, bits = CLICK_BUTTON[tonumber(click)], ModifierBits(mod)
-        if button and bits then
-            local have = false
-            for _, b in ipairs(profile) do
-                if b.type == typeID and b.actionID == menuID and b.button == button and b.modifiers == bits then
-                    have = true
-                end
-            end
-            if not have then
-                profile[#profile + 1] = { type = typeID, actionID = menuID, button = button, modifiers = bits }
-                changed = true
-            end
-        end
-    end
-    if changed then
-        local done, err = pcall(CB.SetProfileByInfo, profile)
-        if done then
-            Msg("added your Menu clicks to Blizzard's Click Casting so the menu opens there.")
-        else
-            Msg("couldn't add your Menu clicks to Blizzard's Click Casting: %s", tostring(err))
-        end
-    end
 end
 
 local function ApplyBindings(btn)
@@ -1693,7 +1633,8 @@ local function ApplyBindings(btn)
             if typ == "target" and not (mod == "" and click == 1) then
                 typ = "macro"                       -- "*macrotext*" set on click
             elseif typ == "togglemenu" and not (mod == "" and click == 2) then
-                menuClicks[mod .. click] = true     -- allowed via Click Casting (above)
+                typ = nil
+                menuClicks[mod .. click] = true
             end
             local sfx = ClickSuffix(click)
             btn:SetAttribute(mod .. "type" .. sfx, typ)
@@ -1705,6 +1646,13 @@ local function ApplyBindings(btn)
             end
         end
     end
+    -- menu on other clicks: the secure click handler turns them into a
+    -- "fhbmenu" click, which opens the game's menu securely (an addon
+    -- opening it taints it, and then Set Focus gets blocked)
+    local list = {}
+    for k in pairs(menuClicks) do list[#list + 1] = k end
+    btn:SetAttribute("fhbmenuclicks", #list > 0 and (" " .. table.concat(list, " ") .. " ") or nil)
+    btn:SetAttribute("*type-fhbmenu", "togglemenu")
     for i = 1, 8 do
         local w = wheelKeys[i]
         btn:SetAttribute("fhbwheelkey" .. i, w and w[1] or nil)
@@ -1726,9 +1674,6 @@ end
 local function ApplyBindingsAll()
     return OutOfCombat(function()
         for _, b in ipairs(buttons) do ApplyBindings(b) end
-        local list = {}
-        for k in pairs(menuClicks) do list[#list + 1] = k end
-        EnsureMenuInteractions(list)
     end)
 end
 
@@ -1815,6 +1760,16 @@ SetupUnitButton = function(btn)
                 self:ClearBindings()
                 return false
             end
+        end
+        local menus = self:GetAttribute("fhbmenuclicks")
+        if menus then
+            local n = (button == "LeftButton" and 1) or (button == "RightButton" and 2)
+                or (button == "MiddleButton" and 3) or (button == "Button4" and 4)
+                or (button == "Button5" and 5) or (button == "wheelup" and 6)
+                or (button == "wheeldown" and 7)
+            local mod = IsAltKeyDown() and "alt-" or IsControlKeyDown() and "ctrl-"
+                or IsShiftKeyDown() and "shift-" or ""
+            if n and menus:find(" " .. mod .. n .. " ", 1, true) then return "fhbmenu" end
         end
         local u = self:GetAttribute("unit")
         if u then self:SetAttribute("*macrotext*", "/target " .. u) end
@@ -2824,8 +2779,6 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
             DB.binds[blankKey] = nil
             DB.defaulted[blankKey] = nil
         end
-        -- make sure Blizzard's Click Casting lets your Menu clicks through
-        C_Timer.After(3, function() ApplyBindingsAll() end)
         -- give defaults to characters with no bindings, and upgrade ones still
         -- on the previous defaults; anything customised is left alone
         if DB.defaulted[charKey] ~= 3 then
