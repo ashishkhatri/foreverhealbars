@@ -907,10 +907,29 @@ local function UpdateRole(btn)
     icon:Show()
 end
 
+-- Names with a last name ("Josh Nezbitt") get a slightly smaller font so
+-- the whole name fits; never below 7.
+local function FitName(btn)
+    local fs = btn.c and btn.c.name
+    if not fs then return end
+    local file, _, flags = fs:GetFont()
+    local size = btn.nameSize or fontSize
+    if not file then return end
+    fs:SetFont(file, size, flags)
+    local w = fs:GetWidth()
+    local need = fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth()
+    while need > w and size > 7 do
+        size = size - 1
+        fs:SetFont(file, size, flags)
+        need = fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth()
+    end
+end
+
 local function UpdateIdentity(btn)
     local u, c = btn.unit, btn.c
     if not u or not UnitExists(u) then return end
     c.name:SetText(UnitName(u) or "")
+    FitName(btn)
     local ok, col = pcall(function()
         local _, class = UnitClass(u)
         return class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
@@ -2004,6 +2023,8 @@ local function ApplyFonts(b)
     -- pets are narrower: their text follows their own width
     local size = b.isPet and math.max(FONT_MIN, math.min(fontSize, FontFor(b:GetWidth(), b:GetHeight()))) or fontSize
     b.c.name:SetFont(file, size, flags)
+    b.nameSize = size
+    FitName(b)
     b.c.status:SetFont(file, math.max(FONT_MIN - 1, size - 1), flags)
     b.c.status:ClearAllPoints()
     b.c.status:SetPoint("CENTER", 0, -math.floor(size * 0.8 + 0.5))
