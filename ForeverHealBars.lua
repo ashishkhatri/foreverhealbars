@@ -25,6 +25,7 @@ local header, anchor, mover
 local buttons = {}                    -- every unit button the header made
 local byUnit = {}                     -- unit token -> { button, ... }
 local pending = {}                    -- functions waiting for combat to end
+local OnMenuClick                     -- defined with the unit buttons
 
 local MODS = { "", "shift-", "ctrl-", "alt-" }
 local MOD_LABEL = { [""] = "Click", ["shift-"] = "Shift", ["ctrl-"] = "Ctrl", ["alt-"] = "Alt" }
@@ -1594,8 +1595,8 @@ end
 -- WoW only lets "target" and "menu" through on clicks that Blizzard's Click
 -- Casting has an interaction for (by default plain left / plain right). Other
 -- clicks target through a secure macro filled in at click time, and open the
--- menu by turning into a "fhbmenu" click in the secure click handler.
-local menuClicks = {}                -- "alt-2" = true etc., opened securely on click
+-- menu directly (menus aren't protected).
+local menuClicks = {}                -- "alt-2" = true etc., opened by OnMenuClick
 
 -- Click to rez: a plain left click on a dead player casts your resurrection
 -- spell; on anyone alive it does whatever plain left click is bound to. The
@@ -1646,13 +1647,6 @@ local function ApplyBindings(btn)
             end
         end
     end
-    -- menu on other clicks: the secure click handler turns them into a
-    -- "fhbmenu" click, which opens the game's menu securely (an addon
-    -- opening it taints it, and then Set Focus gets blocked)
-    local list = {}
-    for k in pairs(menuClicks) do list[#list + 1] = k end
-    btn:SetAttribute("fhbmenuclicks", #list > 0 and (" " .. table.concat(list, " ") .. " ") or nil)
-    btn:SetAttribute("*type-fhbmenu", "togglemenu")
     for i = 1, 8 do
         local w = wheelKeys[i]
         btn:SetAttribute("fhbwheelkey" .. i, w and w[1] or nil)
@@ -1684,6 +1678,28 @@ local secureHandler = CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemp
 
 local CLICK_NUM = { LeftButton = 1, RightButton = 2, MiddleButton = 3, Button4 = 4, Button5 = 5,
     wheelup = 6, wheeldown = 7 }
+local function OpenMenu(unit)
+    if not unit or not UnitExists(unit) or not UnitPopup_OpenMenu then return end
+    local which
+    if unit == "player" then
+        which = "SELF"
+    elseif unit:match("^party%d") then
+        which = "PARTY"
+    elseif unit:match("^raid%d") then
+        which = "RAID_PLAYER"
+    else
+        which = "PLAYER"
+    end
+    UnitPopup_OpenMenu(which, { unit = unit })
+end
+
+OnMenuClick = function(btn, button)
+    if btn.fhbHandOff then return end            -- the click handed something over instead
+    local n = CLICK_NUM[button]
+    if not n then return end
+    local mod = IsAltKeyDown() and "alt-" or IsControlKeyDown() and "ctrl-" or IsShiftKeyDown() and "shift-" or ""
+    if menuClicks[mod .. n] then OpenMenu(btn.unit) end
+end
 
 -- Pets: each player's frame carries a narrower frame for their pet, right
 -- beside it. When the header moves a frame to another player (in combat too),
@@ -1761,16 +1777,6 @@ SetupUnitButton = function(btn)
                 return false
             end
         end
-        local menus = self:GetAttribute("fhbmenuclicks")
-        if menus then
-            local n = (button == "LeftButton" and 1) or (button == "RightButton" and 2)
-                or (button == "MiddleButton" and 3) or (button == "Button4" and 4)
-                or (button == "Button5" and 5) or (button == "wheelup" and 6)
-                or (button == "wheeldown" and 7)
-            local mod = IsAltKeyDown() and "alt-" or IsControlKeyDown() and "ctrl-"
-                or IsShiftKeyDown() and "shift-" or ""
-            if n and menus:find(" " .. mod .. n .. " ", 1, true) then return "fhbmenu" end
-        end
         local u = self:GetAttribute("unit")
         if u then self:SetAttribute("*macrotext*", "/target " .. u) end
         local rez = self:GetAttribute("fhbrez")
@@ -1795,6 +1801,7 @@ SetupUnitButton = function(btn)
     ]])
     SecureHandlerWrapScript(btn, "OnLeave", secureHandler, [[ self:ClearBindings() ]])
     SecureHandlerWrapScript(btn, "OnHide", secureHandler, [[ self:ClearBindings() ]])
+    btn:HookScript("OnClick", OnMenuClick)
 
     -- Something on the cursor (an item to trade or give, or a spell or item
     -- waiting for a target): this one click hands it to the player instead
