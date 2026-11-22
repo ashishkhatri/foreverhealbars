@@ -1642,9 +1642,11 @@ local function ApplyBindings(btn)
             local sfx = ClickSuffix(click)
             btn:SetAttribute(mod .. "type" .. sfx, typ)
             btn:SetAttribute(mod .. "spell" .. sfx, spell)
+            -- Focus: the secure click handler writes "/focus <unit>" here at click time
+            local isFocus = val and val:lower() == "focus" or nil
+            btn:SetAttribute(mod .. "fhbfocus" .. sfx, isFocus)
             if not (mod == "" and click == 1) then
-                btn:SetAttribute(mod .. "macrotext" .. sfx,
-                    (val and val:lower() == "focus") and "/focus [@mouseover]" or nil)
+                btn:SetAttribute(mod .. "macrotext" .. sfx, nil)
             end
             -- only bind the wheel where something is set, so it still zooms
             -- the camera everywhere else
@@ -1785,6 +1787,17 @@ SetupUnitButton = function(btn)
         end
         local u = self:GetAttribute("unit")
         if u then self:SetAttribute("*macrotext*", "/target " .. u) end
+        -- a click bound to Focus
+        if u then
+            local mod = IsAltKeyDown() and "alt-" or IsControlKeyDown() and "ctrl-"
+                or IsShiftKeyDown() and "shift-" or ""
+            local sfx = (button == "LeftButton" and "1") or (button == "RightButton" and "2")
+                or (button == "MiddleButton" and "3") or (button == "Button4" and "4")
+                or (button == "Button5" and "5") or ("-" .. button)
+            if self:GetAttribute(mod .. "fhbfocus" .. sfx) then
+                self:SetAttribute(mod .. "macrotext" .. sfx, "/focus " .. u)
+            end
+        end
         local rez = self:GetAttribute("fhbrez")
         if u and rez and button == "LeftButton" then
             local left = self:GetAttribute("fhbleft")
