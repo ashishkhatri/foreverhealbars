@@ -27,6 +27,7 @@ local byUnit = {}                     -- unit token -> { button, ... }
 local pending = {}                    -- functions waiting for combat to end
 local OnMenuClick                     -- defined with the unit buttons
 
+local SyncFocus                       -- defined with the click handler
 local MODS = { "", "shift-", "ctrl-", "alt-" }
 local MOD_LABEL = { [""] = "Click", ["shift-"] = "Shift", ["ctrl-"] = "Ctrl", ["alt-"] = "Alt" }
 local CLICKS = { 1, 2, 3, 4, 5, 6, 7 }
@@ -1684,6 +1685,20 @@ end
 ---------------------------------------------------------------------------
 local secureHandler = CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
 
+-- Tell the click handler which frame's player is your focus (so a Focus
+-- click on them clears it). Out of combat; in combat the handler keeps
+-- track of the focus changes made by its own clicks.
+function SyncFocus()
+    if InCombatLockdown() then return end
+    local found
+    if UnitExists("focus") then
+        for _, b in ipairs(buttons) do
+            if b.unit and UnitIsUnit(b.unit, "focus") then found = b.unit; break end
+        end
+    end
+    secureHandler:SetAttribute("fhbfocused", found)
+end
+
 local CLICK_NUM = { LeftButton = 1, RightButton = 2, MiddleButton = 3, Button4 = 4, Button5 = 5,
     wheelup = 6, wheeldown = 7 }
 local function OpenMenu(unit)
@@ -1795,7 +1810,14 @@ SetupUnitButton = function(btn)
                 or (button == "MiddleButton" and "3") or (button == "Button4" and "4")
                 or (button == "Button5" and "5") or ("-" .. button)
             if self:GetAttribute(mod .. "fhbfocus" .. sfx) then
-                self:SetAttribute(mod .. "macrotext" .. sfx, "/focus " .. u)
+                -- clicking your current focus clears it
+                if owner:GetAttribute("fhbfocused") == u then
+                    self:SetAttribute(mod .. "macrotext" .. sfx, "/clearfocus")
+                    owner:SetAttribute("fhbfocused", nil)
+                else
+                    self:SetAttribute(mod .. "macrotext" .. sfx, "/focus " .. u)
+                    owner:SetAttribute("fhbfocused", u)
+                end
             end
         end
         local rez = self:GetAttribute("fhbrez")
@@ -2529,7 +2551,7 @@ local function CreateConfig()
                     if low == "menu" and not (mod == "" and click == 2) then
                         GameTooltip:AddLine("Set Focus doesn't work from this menu (the game only allows it from plain right click). Use Focus instead.", 1, 0.5, 0.25, true)
                     elseif low == "focus" then
-                        GameTooltip:AddLine("Makes this player your focus.", 0.8, 0.8, 0.8, true)
+                        GameTooltip:AddLine("Makes this player your focus. Click your current focus to clear it.", 0.8, 0.8, 0.8, true)
                     end
                     GameTooltip:AddLine("Right-click to change. Drag to another square to move.", 0.5, 0.5, 0.5, true)
                 else
@@ -2837,6 +2859,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         for e in pairs(CAST_END) do pcall(ev.RegisterEvent, ev, e) end
         ev:RegisterEvent("GROUP_ROSTER_UPDATE")
         ev:RegisterEvent("PLAYER_TARGET_CHANGED")
+        pcall(ev.RegisterEvent, ev, "PLAYER_FOCUS_CHANGED")
         pcall(ev.RegisterEvent, ev, "PLAYER_ROLES_ASSIGNED")
         ev:RegisterEvent("PLAYER_ENTERING_WORLD")
         ev:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -2846,6 +2869,8 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         RefreshMyBuffs()
     elseif event == "PLAYER_ROLES_ASSIGNED" then
         for _, b in ipairs(buttons) do if b.unit and b:IsShown() then UpdateRole(b) end end
+    elseif event == "PLAYER_FOCUS_CHANGED" then
+        SyncFocus()
     elseif event == "PLAYER_TARGET_CHANGED" then
         for _, b in ipairs(buttons) do if b.unit and b:IsShown() then UpdateSelected(b) end end
     elseif event == "SPELLS_CHANGED" then
@@ -2857,6 +2882,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if mover and mover:IsShown() then SetHint("|cffff5555Can't move or resize in combat|r") end
     elseif event == "PLAYER_REGEN_ENABLED" then
         if mover and mover:IsShown() then SetHint(DEFAULT_HINT) end
+        SyncFocus()
         local list = pending
         pending = {}
         for _, f in ipairs(list) do f() end
@@ -2867,6 +2893,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
             for u in pairs(byUnit) do pcall(NoteAuras, u, nil) end
         end
         C_Timer.After(0.1, UpdateMover)
+        C_Timer.After(0.2, SyncFocus)           -- frames may now show other players
         HideBlizzard()
         for _, b in ipairs(buttons) do if b:IsShown() then UpdateAll(b) end end
     end
