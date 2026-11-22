@@ -1617,18 +1617,16 @@ local CLICK_BUTTON = { "LeftButton", "RightButton", "MiddleButton", "Button4", "
 local modBits
 local function ModifierBits(mod)
     if not modBits then
-        -- what the game uses (Shift 1, Ctrl 4, Alt 16), checked against its names below
-        modBits = { [""] = 0, ["shift-"] = 1, ["ctrl-"] = 4, ["alt-"] = 16 }
-        local found = {}
+        modBits = { [""] = 0 }
         local name = C_ClickBindings and C_ClickBindings.GetStringFromModifiers
         if name then
             for m = 1, 255 do
                 local ok, text = pcall(name, m)
                 if ok and text then
                     text = text:upper():gsub("[^A-Z]", "")
-                    if text == "SHIFT" and not found.shift then found.shift = true; modBits["shift-"] = m end
-                    if text == "CTRL" and not found.ctrl then found.ctrl = true; modBits["ctrl-"] = m end
-                    if text == "ALT" and not found.alt then found.alt = true; modBits["alt-"] = m end
+                    if text == "SHIFT" and not modBits["shift-"] then modBits["shift-"] = m end
+                    if text == "CTRL" and not modBits["ctrl-"] then modBits["ctrl-"] = m end
+                    if text == "ALT" and not modBits["alt-"] then modBits["alt-"] = m end
                 end
             end
         end
@@ -1637,19 +1635,12 @@ local function ModifierBits(mod)
 end
 local function EnsureMenuInteractions(list)
     local CB = C_ClickBindings
-    if #list == 0 or InCombatLockdown() then return end
-    if not (CB and CB.GetProfileInfo and CB.SetProfileByInfo) then
-        Msg("can't reach Blizzard's Click Casting settings, so Menu on %s won't open.", table.concat(list, ", "))
-        return
-    end
+    if not (CB and CB.GetProfileInfo and CB.SetProfileByInfo and Enum.ClickBindingType
+        and Enum.ClickBindingInteraction) or InCombatLockdown() then return end
     local ok, profile = pcall(CB.GetProfileInfo)
-    if not ok or type(profile) ~= "table" then
-        Msg("couldn't read Blizzard's Click Casting settings: %s", tostring(profile))
-        return
-    end
-    -- interaction 3, "open menu" 2 (what the game's own entries use)
-    local menuID = (Enum.ClickBindingInteraction and Enum.ClickBindingInteraction.OpenContextMenu) or 2
-    local typeID = (Enum.ClickBindingType and Enum.ClickBindingType.Interaction) or 3
+    if not ok or type(profile) ~= "table" then return end
+    local menuID = Enum.ClickBindingInteraction.OpenContextMenu
+    local typeID = Enum.ClickBindingType.Interaction
     local changed = false
     for _, key in ipairs(list) do
         local mod, click = key:match("^(.-)(%d+)$")
@@ -1735,12 +1726,8 @@ end
 local function ApplyBindingsAll()
     return OutOfCombat(function()
         for _, b in ipairs(buttons) do ApplyBindings(b) end
-        -- every click set to Menu, other than plain right click (from your
-        -- settings, so it works before any frames exist)
         local list = {}
-        for key, v in pairs(Binds()) do
-            if type(v) == "string" and v:lower() == "menu" and key ~= "2" then list[#list + 1] = key end
-        end
+        for k in pairs(menuClicks) do list[#list + 1] = k end
         EnsureMenuInteractions(list)
     end)
 end
