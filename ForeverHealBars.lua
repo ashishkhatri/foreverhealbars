@@ -372,6 +372,15 @@ local function Build(btn)
     name:SetWordWrap(false)
     c.name = name
 
+    -- last name (WoW Forever), smaller, under the first name
+    local last = text:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    last:SetPoint("TOP", name, "BOTTOM", 0, 0)
+    last:SetWidth(W - 6)
+    last:SetWordWrap(false)
+    last:SetTextColor(0.85, 0.85, 0.85)
+    last:Hide()
+    c.last = last
+
     local status = text:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     status:SetPoint("CENTER", 0, -8)
     status:SetTextColor(0.85, 0.85, 0.85)
@@ -727,6 +736,20 @@ local function PlaceHot(btn, afterIncoming)
     PlaceAbsorb(btn)
 end
 
+-- Where the name sits: centred; or lifted with the last name under it; or
+-- lifted above a Dead / Offline line (which then replaces the last name).
+local function LayoutName(btn)
+    local c = btn.c
+    local showLast = btn.roomy and not btn.hasStatus and btn.lastName ~= nil
+    c.last:SetShown(showLast and true or false)
+    c.name:ClearAllPoints()
+    if showLast then
+        c.name:SetPoint("CENTER", 0, math.floor((btn.lastSize or 8) / 2 + 0.5))
+    else
+        c.name:SetPoint("CENTER", 0, (btn.roomy and btn.hasStatus) and nameLift or 0)
+    end
+end
+
 local OFFLINE_GRAY = 0.35
 local function UpdateHealth(btn)
     local u, c = btn.unit, btn.c
@@ -785,8 +808,7 @@ local function UpdateHealth(btn)
     local has = status ~= nil
     if has ~= btn.hasStatus then
         btn.hasStatus = has
-        c.name:ClearAllPoints()
-        c.name:SetPoint("CENTER", 0, (btn.roomy and has) and nameLift or 0)
+        LayoutName(btn)
     end
 end
 
@@ -907,31 +929,15 @@ local function UpdateRole(btn)
     icon:Show()
 end
 
--- Full names ("Josh Nezbitt") get a slightly smaller font when they're too
--- long for the frame, so the whole name fits; never below 7.
-local function FitName(btn)
-    local fs = btn.c and btn.c.name
-    if not fs then return end
-    local file, _, flags = fs:GetFont()
-    local size = btn.nameSize or fontSize
-    if not file then return end
-    fs:SetFont(file, size, flags)
-    local w = fs:GetWidth()
-    local need = fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth()
-    while need > w and size > 7 do
-        size = size - 1
-        fs:SetFont(file, size, flags)
-        need = fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth()
-    end
-end
-
 local function UpdateIdentity(btn)
     local u, c = btn.unit, btn.c
     if not u or not UnitExists(u) then return end
     -- on WoW Forever UnitName gives the last name where the realm used to be
     local first, last = UnitName(u)
-    c.name:SetText((first or "") .. ((last and last ~= "") and (" " .. last) or ""))
-    FitName(btn)
+    c.name:SetText(first or "")
+    btn.lastName = (last and last ~= "") and last or nil
+    c.last:SetText(btn.lastName or "")
+    LayoutName(btn)
     local ok, col = pcall(function()
         local _, class = UnitClass(u)
         return class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
@@ -2025,8 +2031,8 @@ local function ApplyFonts(b)
     -- pets are narrower: their text follows their own width
     local size = b.isPet and math.max(FONT_MIN, math.min(fontSize, FontFor(b:GetWidth(), b:GetHeight()))) or fontSize
     b.c.name:SetFont(file, size, flags)
-    b.nameSize = size
-    FitName(b)
+    b.lastSize = math.max(7, size - 2)
+    b.c.last:SetFont(file, b.lastSize, flags)
     b.c.status:SetFont(file, math.max(FONT_MIN - 1, size - 1), flags)
     b.c.status:ClearAllPoints()
     b.c.status:SetPoint("CENTER", 0, -math.floor(size * 0.8 + 0.5))
@@ -2094,8 +2100,8 @@ local function ApplySize(w, h)
         -- short frames: name only, centred; tall enough: name above missing health
         b.roomy = h >= math.max(34, fontSize * 2 + 14)
         b.c.status:SetShown(b.roomy)
-        b.c.name:ClearAllPoints()
-        b.c.name:SetPoint("CENTER", 0, (b.roomy and b.hasStatus) and nameLift or 0)
+        b.c.last:SetWidth(bw - 6)
+        LayoutName(b)
     end
     anchor:SetSize(w, h)
     header:SetAttribute("columnSpacing", ColumnSpacing(w))
