@@ -907,8 +907,8 @@ local function UpdateRole(btn)
     icon:Show()
 end
 
--- Names with a last name ("Josh Nezbitt") get a slightly smaller font so
--- the whole name fits; never below 7.
+-- Full names ("Josh Nezbitt") get a slightly smaller font when they're too
+-- long for the frame, so the whole name fits; never below 7.
 local function FitName(btn)
     local fs = btn.c and btn.c.name
     if not fs then return end
@@ -928,7 +928,9 @@ end
 local function UpdateIdentity(btn)
     local u, c = btn.unit, btn.c
     if not u or not UnitExists(u) then return end
-    c.name:SetText(UnitName(u) or "")
+    -- on WoW Forever UnitName gives the last name where the realm used to be
+    local first, last = UnitName(u)
+    c.name:SetText((first or "") .. ((last and last ~= "") and (" " .. last) or ""))
     FitName(btn)
     local ok, col = pcall(function()
         local _, class = UnitClass(u)
