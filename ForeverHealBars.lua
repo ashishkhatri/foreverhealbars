@@ -2776,9 +2776,9 @@ local function ForUnit(unit, fn)
 end
 
 ---------------------------------------------------------------------------
--- Resurrection in progress: a dead player's frame glows gold and shows how
--- far along the resurrection cast is ("Rez 45%"). The cast is matched to the
--- frame by who the caster is targeting (your own: the frame you clicked).
+-- Resurrection in progress: a dead player's frame glows gold and says
+-- "Rezzing...". The cast is matched to the frame by who the caster is
+-- targeting (your own: the frame you clicked), or the game says so.
 ---------------------------------------------------------------------------
 local NoteRezClick
 do
@@ -2854,7 +2854,7 @@ do
                 R.UI(b)
                 b.rezGlow:SetAlpha(alpha)
                 b.rezGlow:Show()
-                b.rezText:SetText(pct and string.format("Rez %d%%", pct) or "Rez...")
+                b.rezText:SetText("Rezzing...")
                 b.rezText:Show()
                 still[b] = true
             end
