@@ -1885,6 +1885,7 @@ SetupUnitButton = function(btn)
         self:SetAttribute(key, "target")      -- the game's target action drops the item or the spell
     end)
     btn:HookScript("PostClick", function(self)
+        if NoteRezClick then NoteRezClick(self.unit) end
         local h = self.fhbHandOff
         if not h then return end
         self.fhbHandOff = nil
@@ -2772,6 +2773,125 @@ local ev = CreateFrame("Frame")
 local function ForUnit(unit, fn)
     local list = byUnit[unit]
     if list then for _, b in ipairs(list) do fn(b) end end
+end
+
+---------------------------------------------------------------------------
+-- Resurrection in progress: a dead player's frame glows gold and shows how
+-- far along the resurrection cast is ("Rez 45%"). The cast is matched to the
+-- frame by who the caster is targeting (your own: the frame you clicked).
+---------------------------------------------------------------------------
+local NoteRezClick
+do
+    -- (kept in one table: the file is near Lua's limit on local names)
+    local R = {
+        REZ = { ["Resurrection"] = true, ["Redemption"] = true, ["Ancestral Spirit"] = true,
+            ["Rebirth"] = true, ["Revive"] = true },
+        casts = {},                  -- caster unit -> { unit = target, start, finish }
+        shown = {},                  -- buttons showing the rez look
+        driver = CreateFrame("Frame"),
+        ev = CreateFrame("Frame"),
+    }
+
+    NoteRezClick = function(unit)
+        if unit and UnitIsDeadOrGhost(unit) then R.lastClick = { unit = unit, t = GetTime() } end
+    end
+
+    function R.UI(btn)
+        if btn.rezGlow then return end
+        local parent = btn.c.status:GetParent()
+        local g = parent:CreateTexture(nil, "OVERLAY", nil, -1)
+        g:SetAllPoints(btn)
+        g:SetColorTexture(1, 0.82, 0.2, 0.35)
+        g:SetBlendMode("ADD")
+        g:Hide()
+        btn.rezGlow = g
+        local t = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        t:SetPoint("BOTTOM", btn, "BOTTOM", 0, 6)
+        t:SetTextColor(1, 0.85, 0.3)
+        t:SetShadowOffset(1, -1)
+        t:Hide()
+        btn.rezText = t
+    end
+
+    -- the frame (unit token) a cast is going to
+    function R.TargetOf(caster)
+        local lc = R.lastClick
+        if UnitIsUnit(caster, "player") and lc and GetTime() - lc.t < 2 then return lc.unit end
+        local tgt = UnitIsUnit(caster, "player") and "target" or (caster .. "target")
+        if UnitExists(tgt) and UnitIsDeadOrGhost(tgt) then
+            for unit in pairs(byUnit) do
+                if UnitIsUnit(unit, tgt) then return unit end
+            end
+        end
+    end
+
+    function R.Refresh()
+        local now = GetTime() * 1000
+        local active = {}
+        for _, c in pairs(R.casts) do
+            -- (pcall: in combat another player's cast times can be hidden values)
+            local ok, pct = pcall(function()
+                return c.finish > c.start and math.min(100, math.max(0, (now - c.start) / (c.finish - c.start) * 100)) or 0
+            end)
+            if not ok then pct = false end
+            if active[c.unit] == nil or (pct and (not active[c.unit] or pct > active[c.unit])) then
+                active[c.unit] = pct
+            end
+        end
+        -- someone is rezzing them but we can't see the cast: no %
+        if UnitHasIncomingResurrection then
+            for unit in pairs(byUnit) do
+                if not active[unit] then
+                    local ok, yes = pcall(UnitHasIncomingResurrection, unit)
+                    if ok and yes == true then active[unit] = false end
+                end
+            end
+        end
+        local alpha = 0.55 + 0.45 * math.sin(GetTime() * 6)
+        local still = {}
+        for unit, pct in pairs(active) do
+            for _, b in ipairs(byUnit[unit] or {}) do
+                R.UI(b)
+                b.rezGlow:SetAlpha(alpha)
+                b.rezGlow:Show()
+                b.rezText:SetText(pct and string.format("Rez %d%%", pct) or "Rez...")
+                b.rezText:Show()
+                still[b] = true
+            end
+        end
+        for b in pairs(R.shown) do
+            if not still[b] then b.rezGlow:Hide(); b.rezText:Hide() end
+        end
+        R.shown = still
+        if not next(active) then R.driver:SetScript("OnUpdate", nil) end
+    end
+    function R.Wake() R.driver:SetScript("OnUpdate", R.Refresh) end
+
+    R.ev:SetScript("OnEvent", function(_, event, caster, _, spellID)
+        if event == "INCOMING_RESURRECT_CHANGED" then R.Wake(); return end
+        if event == "UNIT_SPELLCAST_START" then
+            local name = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID)
+                or (GetSpellInfo and GetSpellInfo(spellID))
+            local ok, isRez = pcall(function() return R.REZ[name] end)
+            if not (ok and isRez) then return end
+            local okt, target = pcall(R.TargetOf, caster)
+            if not okt then target = nil end
+            if target then
+                local okc, _, _, _, startMS, endMS = pcall(UnitCastingInfo, caster)
+                if okc and type(startMS) == "number" and type(endMS) == "number" then
+                    R.casts[caster] = { unit = target, start = startMS, finish = endMS }
+                end
+            end
+            R.Wake()
+        elseif R.casts[caster] then
+            R.casts[caster] = nil
+            R.Wake()
+        end
+    end)
+    for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED",
+        "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_SUCCEEDED", "INCOMING_RESURRECT_CHANGED" }) do
+        pcall(R.ev.RegisterEvent, R.ev, e)
+    end
 end
 
 local UNIT_EVENTS = {

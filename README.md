@@ -17,6 +17,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Roles.** A small tank, healer or damage icon in the bottom-right corner of each frame, from the group's role assignment (or the raid's main tank mark).
 - **Your target.** The frame of whoever you have targeted gets a white outline.
 - **Range and aggro.** Out-of-range players are dimmed, and players with aggro get a red outline (faint for high threat).
+- **Resurrections.** While someone is being resurrected, their frame glows gold and shows how far along the cast is ("Rez 45%"). If the addon can't see who's casting, it shows "Rez...".
 - **Offline players.** An offline player's frame turns gray, with "Offline" under the name.
 - **Lock button.** A small padlock above the top-left corner unlocks the frames. While unlocked, drag anywhere on them to move them, and drag the bottom-right corner to resize: right for wider frames, down for taller ones. The names and the corner icons grow and shrink with the frames (never smaller than 9 pt text and 11 px icons). Click the padlock again to lock.
 - **Settings button.** A small gear next to the padlock opens the settings window (same as `/fhb`).
