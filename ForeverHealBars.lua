@@ -23,6 +23,7 @@ local BAR = "Interface\\Buttons\\WHITE8X8"
 local DB, charKey
 local header, anchor, mover, petHeader
 local groupHeaders = {}              -- one header per raid group (header = group 1)
+local playerButton                   -- you, at the top of your group's column in a raid
 local buttons = {}                    -- every unit button the header made
 local byUnit = {}                     -- unit token -> { button, ... }
 local pending = {}                    -- functions waiting for combat to end
@@ -1985,6 +1986,15 @@ local function CreateHeader()
     end
     header = groupHeaders[1]
 
+    -- In a raid the game lists your group by raid order, which can put you
+    -- 4th. F1-F5 go you, then the others: so in a raid you get your own frame
+    -- at the top of your group's column and that group's header leaves you out.
+    playerButton = CreateFrame("Button", "ForeverHealBarsPlayer", UIParent, "SecureUnitButtonTemplate")
+    playerButton:SetSize(DB.w or W, DB.h or H)
+    SetupUnitButton(playerButton)
+    playerButton:SetAttribute("unit", "player")
+    playerButton:Hide()
+
     -- everyone's pets, in their own block to the right of the grid
     petHeader = CreateFrame("Frame", "ForeverHealBarsPetHeader", UIParent, "SecureGroupPetHeaderTemplate")
     petHeader.initButton = InitButton
@@ -2025,12 +2035,34 @@ end
 -- combat ends).
 function LayoutColumns()
     if InCombatLockdown() or not anchor then return end
-    local w = DB.w or W
+    local w, hgt = DB.w or W, DB.h or H
+    -- which raid group you're in (nil outside a raid)
+    local mine
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            local _, _, sub = GetRaidRosterInfo(i)
+            if UnitIsUnit("raid" .. i, "player") then mine = sub; break end
+        end
+    end
+    for g, h in ipairs(groupHeaders) do
+        -- in a raid you're drawn by your own frame; outside one, group 1 shows you
+        local wantPlayer = not mine and g == 1
+        if h:GetAttribute("showPlayer") ~= wantPlayer then h:SetAttribute("showPlayer", wantPlayer) end
+    end
+    if playerButton then
+        if mine then playerButton:Show() else playerButton:Hide() end
+    end
     local x = 0
-    for _, h in ipairs(groupHeaders) do
+    for g, h in ipairs(groupHeaders) do
         h:ClearAllPoints()
-        h:SetPoint("TOPLEFT", anchor, "TOPLEFT", x, 0)
-        if HeaderUsed(h) then x = x + w + GAP end
+        local top = 0
+        if g == mine and playerButton then
+            playerButton:ClearAllPoints()
+            playerButton:SetPoint("TOPLEFT", anchor, "TOPLEFT", x, 0)
+            top = -(hgt + GAP)
+        end
+        h:SetPoint("TOPLEFT", anchor, "TOPLEFT", x, top)
+        if HeaderUsed(h) or g == mine then x = x + w + GAP end
     end
     if petHeader then
         petHeader:ClearAllPoints()
@@ -2047,6 +2079,15 @@ local function GridSize()
         if HeaderUsed(h) then
             right = math.max(right, h:GetRight() or right)
             height = math.max(height, h:GetHeight() or 0)
+        end
+    end
+    if playerButton and playerButton:IsShown() then
+        right = math.max(right, playerButton:GetRight() or right)
+    end
+    for _, h in ipairs(groupHeaders) do
+        if HeaderUsed(h) and playerButton and playerButton:IsShown()
+            and (h:GetLeft() or 0) == (playerButton:GetLeft() or -1) then
+            height = math.max(height, (h:GetHeight() or 0) + (DB.h or H) + GAP)
         end
     end
     if petHeader and petHeader:IsShown() and HeaderUsed(petHeader) then
