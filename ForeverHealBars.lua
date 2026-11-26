@@ -22,12 +22,14 @@ local BAR = "Interface\\Buttons\\WHITE8X8"
 
 local DB, charKey
 local header, anchor, mover, petHeader
+local groupHeaders = {}              -- one header per raid group (header = group 1)
 local buttons = {}                    -- every unit button the header made
 local byUnit = {}                     -- unit token -> { button, ... }
 local pending = {}                    -- functions waiting for combat to end
 local OnMenuClick                     -- defined with the unit buttons
 
 local SyncFocus                       -- defined with the click handler
+local HeaderUsed, LayoutColumns       -- defined with the grid layout
 local HotTimeOptions, hotTimeOpts     -- HoT time-left format (built once)
 local MODS = { "", "shift-", "ctrl-", "alt-" }
 local MOD_LABEL = { [""] = "Click", ["shift-"] = "Shift", ["ctrl-"] = "Ctrl", ["alt-"] = "Alt" }
@@ -970,7 +972,8 @@ local function UpdateIdentity(btn)
     -- a pet takes its owner's class colour, darker
     local owner = btn.isPet and (u == "pet" and "player" or u:gsub("pet", ""))
     local okOwner, oc = pcall(function()
-        local _, class = owner and UnitClass(owner)
+        if not owner then return nil end
+        local _, class = UnitClass(owner)
         return class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
     end)
     if btn.isPet and okOwner and oc then
@@ -1786,7 +1789,6 @@ end
 -- tight in big raids.
 local function PetsOn() return not DB or DB.pets ~= false end
 local function PetWidth(w) return math.max(30, math.floor(w * 0.6 + 0.5)) end
-local function ColumnSpacing() return GAP end
 local PET_GAP = 8                      -- space between the raid grid and the pets
 
 local SetupUnitButton
@@ -1796,6 +1798,7 @@ local function ApplyPets()
     return OutOfCombat(function()
         if petHeader then
             if PetsOn() then petHeader:Show() else petHeader:Hide() end
+            LayoutColumns()
         end
     end)
 end
@@ -1950,43 +1953,39 @@ local function CreateHeader()
     anchor:SetClampedToScreen(true)
     PlaceAnchor()
 
-    header = CreateFrame("Frame", "ForeverHealBarsHeader", UIParent, "SecureGroupHeaderTemplate")
-    header.initButton = InitButton
-    header:SetPoint("TOPLEFT", anchor, "TOPLEFT")
-    DB.scale = nil                            -- (scale was removed; size is set by dragging the corner)
-
-    header:SetAttribute("template", "SecureUnitButtonTemplate")
-    header:SetAttribute("templateType", "Button")
-    header:SetAttribute("initialConfigFunction", string.format([[
-        self:SetWidth(%d)
-        self:SetHeight(%d)
-        self:GetParent():CallMethod("initButton", self:GetName())
-    ]], W, H))
-
-    header:SetAttribute("showPlayer", true)
-    header:SetAttribute("showSolo", true)
-    header:SetAttribute("showParty", true)
-    header:SetAttribute("showRaid", true)
-    header:SetAttribute("point", "TOP")
-    header:SetAttribute("yOffset", -GAP)
-    header:SetAttribute("groupBy", "GROUP")
-    header:SetAttribute("groupingOrder", "1,2,3,4,5,6,7,8")
-    header:SetAttribute("groupFilter", "1,2,3,4,5,6,7,8")
-    header:SetAttribute("unitsPerColumn", 5)
-    header:SetAttribute("maxColumns", 8)
-    header:SetAttribute("columnSpacing", ColumnSpacing())
-    header:SetAttribute("columnAnchorPoint", "LEFT")
-
-    -- Create all 40 buttons now, out of combat, so people who join mid-fight
-    -- get a fully set-up button instead of one created in combat lockdown.
-    header:SetAttribute("startingIndex", -MAX_BUTTONS + 1)
-    header:Show()
-    header:SetAttribute("startingIndex", 1)
+    -- One header per raid group, each its own column, so a column is always
+    -- one raid group (group 1 also shows you solo and your party).
+    for g = 1, 8 do
+        local h = CreateFrame("Frame", g == 1 and "ForeverHealBarsHeader" or ("ForeverHealBarsHeader" .. g),
+            UIParent, "SecureGroupHeaderTemplate")
+        h.initButton = InitButton
+        h.group = g
+        h:SetPoint("TOPLEFT", anchor, "TOPLEFT", (g - 1) * ((DB.w or W) + GAP), 0)
+        h:SetAttribute("template", "SecureUnitButtonTemplate")
+        h:SetAttribute("templateType", "Button")
+        h:SetAttribute("initialConfigFunction", ConfigSnippet(DB.w or W, DB.h or H))
+        h:SetAttribute("showRaid", true)
+        h:SetAttribute("showPlayer", g == 1)
+        h:SetAttribute("showSolo", g == 1)
+        h:SetAttribute("showParty", g == 1)
+        h:SetAttribute("groupFilter", tostring(g))
+        h:SetAttribute("point", "TOP")
+        h:SetAttribute("yOffset", -GAP)
+        h:SetAttribute("unitsPerColumn", 5)
+        h:SetAttribute("maxColumns", 1)
+        -- make its 5 buttons now, out of combat, so people joining mid-fight
+        -- get a fully set-up button
+        h:SetAttribute("startingIndex", -4)
+        h:Show()
+        h:SetAttribute("startingIndex", 1)
+        groupHeaders[g] = h
+    end
+    header = groupHeaders[1]
 
     -- everyone's pets, in their own block to the right of the grid
     petHeader = CreateFrame("Frame", "ForeverHealBarsPetHeader", UIParent, "SecureGroupPetHeaderTemplate")
     petHeader.initButton = InitButton
-    petHeader:SetPoint("TOPLEFT", header, "TOPRIGHT", PET_GAP, 0)
+    petHeader:SetPoint("TOPLEFT", anchor, "TOPLEFT", (DB.w or W) + PET_GAP, 0)
     petHeader:SetAttribute("template", "SecureUnitButtonTemplate")
     petHeader:SetAttribute("templateType", "Button")
     petHeader:SetAttribute("initialConfigFunction", ConfigSnippet(PetWidth(DB.w or W), DB.h or H))
@@ -2012,14 +2011,46 @@ end
 
 local ACCENT = { 0.2, 1, 0.6 }
 
+-- does this header show anyone right now?
+function HeaderUsed(h)
+    local child = h and h:GetAttribute("child1")
+    return child and child:IsShown() and true or false
+end
+
+-- Columns side by side: each raid group that has anyone, left to right with
+-- no gaps; the pets block after them. Out of combat only (it's redone when
+-- combat ends).
+function LayoutColumns()
+    if InCombatLockdown() or not anchor then return end
+    local w = DB.w or W
+    local x = 0
+    for _, h in ipairs(groupHeaders) do
+        h:ClearAllPoints()
+        h:SetPoint("TOPLEFT", anchor, "TOPLEFT", x, 0)
+        if HeaderUsed(h) then x = x + w + GAP end
+    end
+    if petHeader then
+        petHeader:ClearAllPoints()
+        petHeader:SetPoint("TOPLEFT", anchor, "TOPLEFT", math.max(w, x - GAP) + PET_GAP, 0)
+    end
+end
+
 -- Size of the whole grid on screen, never smaller than one frame.
 local function GridSize()
     local sc = header:GetScale()
-    local pw, ph = 0, 0
-    if petHeader and petHeader:IsShown() and (petHeader:GetWidth() or 0) > 1 then
-        pw, ph = PET_GAP + petHeader:GetWidth(), petHeader:GetHeight() or 0
+    local left = anchor:GetLeft() or 0
+    local right, height = left + W, H
+    for _, h in ipairs(groupHeaders) do
+        if HeaderUsed(h) then
+            right = math.max(right, h:GetRight() or right)
+            height = math.max(height, h:GetHeight() or 0)
+        end
     end
-    return (math.max(header:GetWidth() or 0, W) + pw) * sc, math.max(header:GetHeight() or 0, ph, H) * sc
+    if petHeader and petHeader:IsShown() and HeaderUsed(petHeader) then
+        right = math.max(right, petHeader:GetRight() or right)
+        height = math.max(height, petHeader:GetHeight() or 0)
+    end
+    return (right - left) * sc, height * sc
 end
 
 local function UpdateMover()
@@ -2123,11 +2154,13 @@ local function ApplySize(w, h)
         LayoutName(b)
     end
     anchor:SetSize(w, h)
-    header:SetAttribute("columnSpacing", ColumnSpacing(w))
-    header:SetAttribute("initialConfigFunction", ConfigSnippet(w, h))
-    -- any attribute change makes the header lay its buttons out again
+    -- any attribute change makes a header lay its buttons out again
     layoutTick = layoutTick + 1
-    header:SetAttribute("fhbLayout", layoutTick)
+    for _, gh in ipairs(groupHeaders) do
+        gh:SetAttribute("initialConfigFunction", ConfigSnippet(w, h))
+        gh:SetAttribute("fhbLayout", layoutTick)
+    end
+    C_Timer.After(0, LayoutColumns)
     if petHeader then
         petHeader:SetAttribute("initialConfigFunction", ConfigSnippet(PetWidth(w), h))
         petHeader:SetAttribute("fhbLayout", layoutTick)
@@ -2138,10 +2171,19 @@ end
 
 -- How many columns and rows of frames are showing right now.
 local function GridShape()
-    local n = 0
-    for _, b in ipairs(buttons) do if b:IsShown() and not b.isPet then n = n + 1 end end
-    n = math.max(n, 1)
-    return math.ceil(n / 5), math.min(n, 5)
+    local cols, rows = 0, 1
+    for _, h in ipairs(groupHeaders) do
+        if HeaderUsed(h) then
+            cols = cols + 1
+            local n = 0
+            for i = 1, 5 do
+                local c = h:GetAttribute("child" .. i)
+                if c and c:IsShown() then n = n + 1 end
+            end
+            rows = math.max(rows, n)
+        end
+    end
+    return math.max(cols, 1), rows
 end
 
 local function CreateMover()
@@ -3054,6 +3096,8 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     elseif event == "PLAYER_REGEN_ENABLED" then
         if mover and mover:IsShown() then SetHint(DEFAULT_HINT) end
         SyncFocus()
+        LayoutColumns()
+        C_Timer.After(0.1, UpdateMover)
         local list = pending
         pending = {}
         for _, f in ipairs(list) do f() end
@@ -3063,6 +3107,7 @@ ev:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
             for u in pairs(byUnit) do pcall(NoteAuras, u, nil) end
         end
+        C_Timer.After(0.05, LayoutColumns)      -- groups may have filled or emptied
         C_Timer.After(0.1, UpdateMover)
         C_Timer.After(0.2, SyncFocus)           -- frames may now show other players
         HideBlizzard()

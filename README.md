@@ -4,7 +4,7 @@
 
 Minimalist grid raid frames for healers on WoW Forever.
 
-- **Grid layout.** Compact squares, five per column, one column per group. Works solo, in a party and in raids up to 40.
+- **Grid layout.** Compact squares, one column per raid group (a group of 3 stays a column of 3), empty groups closed up. Works solo, in a party and in raids up to 40.
 - **Click-casting.** Bind spells to left, right, middle, mouse 4, mouse 5 and the mouse wheel (up and down), with or without Shift, Ctrl or Alt, then click (or scroll over) a frame to cast on that player. Wheel directions with nothing bound still zoom the camera.
 - **Your HoTs.** Small icons in the top-right corner of each frame, each with the seconds it has left. Works in combat. Hover a HoT or debuff icon to see what it is.
 - **All debuffs.** Small icons in the bottom-left corner for every debuff on the player, whether or not you can remove it (up to four). Works in combat. Long effects over 30 minutes, like a Camp Tent's Boosted Rest, are left out.
