@@ -2038,14 +2038,33 @@ function LayoutColumns()
     local w, hgt = DB.w or W, DB.h or H
     -- which raid group you're in (nil outside a raid)
     local mine
+    local others = {}                  -- the rest of your group, in raid order
     if IsInRaid() then
         for i = 1, GetNumGroupMembers() do
             local _, _, sub = GetRaidRosterInfo(i)
             if UnitIsUnit("raid" .. i, "player") then mine = sub; break end
         end
+        for i = 1, GetNumGroupMembers() do
+            local name, _, sub = GetRaidRosterInfo(i)
+            if mine and sub == mine and name and not UnitIsUnit("raid" .. i, "player") then
+                others[#others + 1] = name
+            end
+        end
     end
     for g, h in ipairs(groupHeaders) do
-        -- in a raid you're drawn by your own frame; outside one, group 1 shows you
+        -- In a raid you're drawn by your own frame at the top: your group's
+        -- header lists just the others, by name (in a raid the game ignores
+        -- "leave me out"). Every other group lists its group number.
+        if g == mine then
+            local list = #others > 0 and table.concat(others, ",") or "-"
+            if h:GetAttribute("groupFilter") ~= nil then h:SetAttribute("groupFilter", nil) end
+            if h:GetAttribute("sortMethod") ~= "NAMELIST" then h:SetAttribute("sortMethod", "NAMELIST") end
+            if h:GetAttribute("nameList") ~= list then h:SetAttribute("nameList", list) end
+        else
+            if h:GetAttribute("nameList") ~= nil then h:SetAttribute("nameList", nil) end
+            if h:GetAttribute("sortMethod") ~= "INDEX" then h:SetAttribute("sortMethod", "INDEX") end
+            if h:GetAttribute("groupFilter") ~= tostring(g) then h:SetAttribute("groupFilter", tostring(g)) end
+        end
         local wantPlayer = not mine and g == 1
         if h:GetAttribute("showPlayer") ~= wantPlayer then h:SetAttribute("showPlayer", wantPlayer) end
     end
