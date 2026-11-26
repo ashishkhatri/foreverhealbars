@@ -673,6 +673,8 @@ BuildAuraBoxes = function(btn)
         templateNames = { "ForeverHealBarsHotTemplate" },
         initializeFrame = function(b)
             pcall(b.SetIcon, b, b.Icon)
+            -- time left on your HoT, counted down by the game itself
+            if b.Duration then pcall(b.SetDurationText, b, b.Duration) end
             HoverOnly(b)
         end,
         candidateFilters = { maxDuration = HOT_MAX_SECONDS },

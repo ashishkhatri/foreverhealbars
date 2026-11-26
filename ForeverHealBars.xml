@@ -2,6 +2,10 @@
   <!-- Templates for the game's own aura containers. In combat WoW Forever
        hides buffs and debuffs from addon code, but these containers draw them
        themselves. Their regions have to be declared in a forbidden-object scope. -->
+  <!-- small outlined numbers for HoT time left -->
+  <Font name="ForeverHealBarsHotTimeFont" font="Fonts\ARIALN.TTF" height="8" outline="NORMAL" virtual="true">
+    <Color r="1" g="1" b="1"/>
+  </Font>
   <ScopedModifier useForbiddenObjectTable="true">
     <!-- a debuff you can dispel: no visible icon of its own, it only carries the
          frame-wide glow the game tints by debuff type (built in Lua) -->
@@ -21,6 +25,14 @@
           <Texture parentKey="Icon" setAllPoints="true">
             <TexCoords left="0.08" right="0.92" top="0.08" bottom="0.92"/>
           </Texture>
+        </Layer>
+        <Layer level="OVERLAY">
+          <!-- seconds left, filled in by the game (see SetDurationText in Lua) -->
+          <FontString parentKey="Duration" inherits="ForeverHealBarsHotTimeFont" justifyH="CENTER">
+            <Anchors>
+              <Anchor point="CENTER" x="0" y="0"/>
+            </Anchors>
+          </FontString>
         </Layer>
       </Layers>
     </AuraButton>
