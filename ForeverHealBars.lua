@@ -28,6 +28,7 @@ local pending = {}                    -- functions waiting for combat to end
 local OnMenuClick                     -- defined with the unit buttons
 
 local SyncFocus                       -- defined with the click handler
+local HotTimeOptions, hotTimeOpts     -- HoT time-left format (built once)
 local MODS = { "", "shift-", "ctrl-", "alt-" }
 local MOD_LABEL = { [""] = "Click", ["shift-"] = "Shift", ["ctrl-"] = "Ctrl", ["alt-"] = "Alt" }
 local CLICKS = { 1, 2, 3, 4, 5, 6, 7 }
@@ -658,6 +659,22 @@ local function LearnIgnoredDebuffs(u)
 end
 
 
+-- the format for HoT time left: plain seconds ("12"), minutes past a minute
+function HotTimeOptions()
+    if hotTimeOpts ~= nil then return hotTimeOpts or nil end
+    hotTimeOpts = false
+    local R = Enum and Enum.NumericRuleFormatRounding
+    if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter and R) then return nil end
+    local ok, f = pcall(C_StringUtil.CreateNumericRuleFormatter)
+    if not ok or not f then return nil end
+    ok = pcall(f.SetBreakpoints, f, {
+        { threshold = 0, format = "%d", step = 1, rounding = R.Up },
+        { threshold = 61, format = "%dm", step = 1, rounding = R.Down, components = { { div = 60 } } },
+    })
+    if ok then hotTimeOpts = { textFormatter = f } end
+    return hotTimeOpts or nil
+end
+
 BuildAuraBoxes = function(btn)
     local c = btn.c
     if not Flow then return end
@@ -673,8 +690,14 @@ BuildAuraBoxes = function(btn)
         templateNames = { "ForeverHealBarsHotTemplate" },
         initializeFrame = function(b)
             pcall(b.SetIcon, b, b.Icon)
-            -- time left on your HoT, counted down by the game itself
-            if b.Duration then pcall(b.SetDurationText, b, b.Duration) end
+            -- time left on your HoT, counted down by the game itself; just the
+            -- number ("12", not "12s") when the game lets us choose the format
+            if b.Duration then
+                local opts = HotTimeOptions()
+                if not (opts and pcall(b.SetDurationText, b, b.Duration, opts)) then
+                    pcall(b.SetDurationText, b, b.Duration)
+                end
+            end
             HoverOnly(b)
         end,
         candidateFilters = { maxDuration = HOT_MAX_SECONDS },
