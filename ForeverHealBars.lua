@@ -21,7 +21,7 @@ local SHIELD_H = 6                    -- height of the shield (absorb) bar
 local BAR = "Interface\\Buttons\\WHITE8X8"
 
 local DB, charKey
-local header, anchor, mover
+local header, anchor, mover, petHeader
 local buttons = {}                    -- every unit button the header made
 local byUnit = {}                     -- unit token -> { button, ... }
 local pending = {}                    -- functions waiting for combat to end
@@ -967,9 +967,14 @@ local function UpdateIdentity(btn)
         local _, class = UnitClass(u)
         return class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
     end)
-    if btn.isPet and btn.owner and btn.owner.classColor then
-        local oc = btn.owner.classColor
-        btn.classColor = { oc[1] * 0.7, oc[2] * 0.7, oc[3] * 0.7 }
+    -- a pet takes its owner's class colour, darker
+    local owner = btn.isPet and (u == "pet" and "player" or u:gsub("pet", ""))
+    local okOwner, oc = pcall(function()
+        local _, class = owner and UnitClass(owner)
+        return class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+    end)
+    if btn.isPet and okOwner and oc then
+        btn.classColor = { oc.r * 0.55, oc.g * 0.55, oc.b * 0.55 }
     elseif ok and col then
         btn.classColor = { col.r * 0.8, col.g * 0.8, col.b * 0.8 }
     else
@@ -1776,54 +1781,21 @@ OnMenuClick = function(btn, button)
     if menuClicks[mod .. n] then OpenMenu(btn.unit) end
 end
 
--- Pets: each player's frame carries a narrower frame for their pet, right
--- beside it. When the header moves a frame to another player (in combat too),
--- a secure snippet points the pet frame at that player's pet, and the game
--- shows it only while that pet exists.
+-- Pets: their own block of narrower frames to the right of the raid grid
+-- (a second header that lists everyone's pets), so the grid itself stays
+-- tight in big raids.
 local function PetsOn() return not DB or DB.pets ~= false end
 local function PetWidth(w) return math.max(30, math.floor(w * 0.6 + 0.5)) end
-local function ColumnSpacing(w)
-    return PetsOn() and (GAP + PetWidth(w) + GAP) or GAP
-end
+local function ColumnSpacing() return GAP end
+local PET_GAP = 8                      -- space between the raid grid and the pets
 
 local SetupUnitButton
 
-local function CreatePetButton(owner)
-    local pet = CreateFrame("Button", owner:GetName() .. "Pet", owner, "SecureUnitButtonTemplate")
-    pet:SetPoint("TOPLEFT", owner, "TOPRIGHT", GAP, 0)
-    pet:SetSize(PetWidth(DB.w or W), DB.h or H)
-    pet.isPet = true
-    pet.owner = owner
-    SetupUnitButton(pet)
-    pet:Hide()
-    SecureHandlerSetFrameRef(owner, "fhbpet", pet)        -- (unit buttons have no SetFrameRef of their own)
-    owner.pet = pet
-    SecureHandlerWrapScript(owner, "OnAttributeChanged", secureHandler, [[
-        if name ~= "unit" then return end
-        local pet = self:GetFrameRef("fhbpet")
-        if not pet then return end
-        local pu
-        if value == "player" then
-            pu = "pet"
-        elseif value then
-            local kind, n = strmatch(value, "^(%a+)(%d+)$")
-            if kind == "party" or kind == "raid" then pu = kind .. "pet" .. n end
-        end
-        pet:SetAttribute("unit", pu)
-    ]])
-    if PetsOn() then RegisterUnitWatch(pet) end
-end
-
--- show or hide every pet frame (out of combat)
+-- show or hide the pets block (out of combat)
 local function ApplyPets()
     return OutOfCombat(function()
-        for _, b in ipairs(buttons) do
-            if b.pet then
-                if PetsOn() then RegisterUnitWatch(b.pet) else UnregisterUnitWatch(b.pet); b.pet:Hide() end
-            end
-        end
-        if header then
-            header:SetAttribute("columnSpacing", ColumnSpacing(DB.w or W))
+        if petHeader then
+            if PetsOn() then petHeader:Show() else petHeader:Hide() end
         end
     end)
 end
@@ -1832,8 +1804,8 @@ end
 local function InitButton(self, name)
     local btn = _G[name]
     if not btn or btn.fhb then return end
+    btn.isPet = (self == petHeader) or nil
     SetupUnitButton(btn)
-    CreatePetButton(btn)
 end
 
 SetupUnitButton = function(btn)
@@ -1963,6 +1935,14 @@ local function PlaceAnchor()
     end
 end
 
+local function ConfigSnippet(w, h)
+    return string.format([[
+        self:SetWidth(%d)
+        self:SetHeight(%d)
+        self:GetParent():CallMethod("initButton", self:GetName())
+    ]], w, h)
+end
+
 local function CreateHeader()
     anchor = CreateFrame("Frame", "ForeverHealBarsAnchor", UIParent)
     anchor:SetSize(W, H)
@@ -1994,7 +1974,7 @@ local function CreateHeader()
     header:SetAttribute("groupFilter", "1,2,3,4,5,6,7,8")
     header:SetAttribute("unitsPerColumn", 5)
     header:SetAttribute("maxColumns", 8)
-    header:SetAttribute("columnSpacing", ColumnSpacing(DB.w or W))
+    header:SetAttribute("columnSpacing", ColumnSpacing())
     header:SetAttribute("columnAnchorPoint", "LEFT")
 
     -- Create all 40 buttons now, out of combat, so people who join mid-fight
@@ -2002,6 +1982,23 @@ local function CreateHeader()
     header:SetAttribute("startingIndex", -MAX_BUTTONS + 1)
     header:Show()
     header:SetAttribute("startingIndex", 1)
+
+    -- everyone's pets, in their own block to the right of the grid
+    petHeader = CreateFrame("Frame", "ForeverHealBarsPetHeader", UIParent, "SecureGroupPetHeaderTemplate")
+    petHeader.initButton = InitButton
+    petHeader:SetPoint("TOPLEFT", header, "TOPRIGHT", PET_GAP, 0)
+    petHeader:SetAttribute("template", "SecureUnitButtonTemplate")
+    petHeader:SetAttribute("templateType", "Button")
+    petHeader:SetAttribute("initialConfigFunction", ConfigSnippet(PetWidth(DB.w or W), DB.h or H))
+    for k, v in pairs({ showPlayer = true, showSolo = true, showParty = true, showRaid = true,
+        point = "TOP", yOffset = -GAP, unitsPerColumn = 5, maxColumns = 8,
+        columnSpacing = GAP, columnAnchorPoint = "LEFT" }) do
+        petHeader:SetAttribute(k, v)
+    end
+    petHeader:SetAttribute("startingIndex", -MAX_BUTTONS + 1)
+    petHeader:Show()
+    petHeader:SetAttribute("startingIndex", 1)
+    if not PetsOn() then petHeader:Hide() end
 end
 
 ---------------------------------------------------------------------------
@@ -2018,8 +2015,11 @@ local ACCENT = { 0.2, 1, 0.6 }
 -- Size of the whole grid on screen, never smaller than one frame.
 local function GridSize()
     local sc = header:GetScale()
-    local extra = PetsOn() and (GAP + PetWidth(DB.w or W)) or 0
-    return (math.max(header:GetWidth() or 0, W) + extra) * sc, math.max(header:GetHeight() or 0, H) * sc
+    local pw, ph = 0, 0
+    if petHeader and petHeader:IsShown() and (petHeader:GetWidth() or 0) > 1 then
+        pw, ph = PET_GAP + petHeader:GetWidth(), petHeader:GetHeight() or 0
+    end
+    return (math.max(header:GetWidth() or 0, W) + pw) * sc, math.max(header:GetHeight() or 0, ph, H) * sc
 end
 
 local function UpdateMover()
@@ -2038,13 +2038,6 @@ local DEFAULT_HINT = "Drag to move  |cff666a75·|r  drag the corner to resize"
 -- Frame (cell) size: width and height independently.
 local MIN_W, MAX_W, MIN_H, MAX_H = 40, 200, 22, 120
 
-local function ConfigSnippet(w, h)
-    return string.format([[
-        self:SetWidth(%d)
-        self:SetHeight(%d)
-        self:GetParent():CallMethod("initButton", self:GetName())
-    ]], w, h)
-end
 
 local layoutTick = 0
 local function FontFor(w, h)
@@ -2135,6 +2128,10 @@ local function ApplySize(w, h)
     -- any attribute change makes the header lay its buttons out again
     layoutTick = layoutTick + 1
     header:SetAttribute("fhbLayout", layoutTick)
+    if petHeader then
+        petHeader:SetAttribute("initialConfigFunction", ConfigSnippet(PetWidth(w), h))
+        petHeader:SetAttribute("fhbLayout", layoutTick)
+    end
     C_Timer.After(0, UpdateMover)
     return w, h
 end
@@ -3216,7 +3213,7 @@ SlashCmdList.FOREVERHEALBARS = function(msg)
     elseif cmd == "pets" then
         DB.pets = not DB.pets
         if config and config.showPets then config.showPets:SetChecked(DB.pets) end
-        Msg("pets %s.", DB.pets and "shown beside their owners" or "hidden")
+        Msg("pets %s.", DB.pets and "shown beside the raid" or "hidden")
         if ApplyPets() then C_Timer.After(0.1, UpdateMover) else Msg("will update after combat.") end
     elseif cmd == "blizzard" then
         SetHideBlizzard(not DB.hideBlizzard)

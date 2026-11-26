@@ -12,7 +12,7 @@ Minimalist grid raid frames for healers on WoW Forever.
 - **Incoming heals.** A light green extension on the health bar for heals about to land, that slides out from the health edge when a heal starts, then softly pulses until it lands. HoTs (Renew, Rejuvenation, Regrowth) from anyone add a softer, steady segment of the same green after it showing what they still have left to heal, shrinking as they tick. When the game doesn't report a HoT's amount (common for other players' HoTs), the spell rank's base healing is used.
 - **Resources (optional).** Tick **Show mana / rage / energy bar** in settings for a thin bar along the bottom of each frame: mana (blue), rage (red) or energy (yellow). Off by default. While a player is casting, the mana that cast will cost shows as a lighter section at the end of their bar.
 - **Shields.** A dashed white strip along the top of a frame shows how big a shield (like Power Word: Shield) is against their max health, even at full health. When they're hurt, white stripes on a pale blue tint also fill the missing part of the bar (after incoming heals and HoTs) to show how much of it the shield covers. Both work in combat.
-- **Pets.** Each player's pet gets a narrower frame right beside its owner's, in a darker shade of the owner's class color, with the same click-casting. Untick **Show pets** in `/fhb` (or type `/fhb pets`) to hide them.
+- **Pets.** Pets get their own block of narrower frames to the right of the raid grid, in a darker shade of the owner's class color, with the same click-casting, so the grid stays compact in 40-player raids. Untick **Show pets** in `/fhb` (or type `/fhb pets`) to hide them.
 - **Buffwatch.** Out of combat, frames flash (beside the role icon) the icon of any of your buffs that player is missing or that runs out within 5 minutes: Fortitude, Divine Spirit and Shadow Protection for priests, Arcane Intellect for mages (mana users only), Mark of the Wild for druids (and Thorns on tanks). Only buffs you know are checked, and the group versions count. They hide in combat. Off by default: tick **Buffwatch** in `/fhb` (or type `/fhb buffs`) to turn it on.
 - **Roles.** A small tank, healer or damage icon in the bottom-right corner of each frame, from the group's role assignment (or the raid's main tank mark).
 - **Your target.** The frame of whoever you have targeted gets a white outline.
@@ -71,7 +71,7 @@ The settings window (`/fhb`) has controls for pets, Buffwatch, the mana bar and 
 | `/fhb unlock` | Unlock the frames to drag them (same as the padlock) |
 | `/fhb lock` | Lock them again |
 | `/fhb buffs` | Turn Buffwatch on or off |
-| `/fhb pets` | Show or hide pet frames beside their owners |
+| `/fhb pets` | Show or hide the pet frames |
 | `/fhb blizzard` | Turn hiding Blizzard's party and raid frames on or off |
 | `/fhb debug` | List the debuffs and buffs on your target (or yourself) and what the game reports about them |
 | `/fhb reset` | Put the frames back in the default spot and size |
